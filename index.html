@@ -1,0 +1,2002 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="面向前后端开发者的数据库索引原理与慢接口优化长页面教程，以 PostgreSQL 为主并对照 MySQL/InnoDB。">
+  <title>数据库索引原理 · 慢 SQL 侦探手册</title>
+  <script>document.documentElement.classList.add('js');</script>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f3eddc;
+      --paper-soft: #faf6e9;
+      --paper-deep: #e6dcc0;
+      --ink: #202822;
+      --ink-soft: #586158;
+      --line: #bdb49c;
+      --line-strong: #756f60;
+      --green: #146447;
+      --green-soft: #d8e7d8;
+      --orange: #a84325;
+      --orange-soft: #f3d7bf;
+      --red: #943b2f;
+      --blue: #2f6480;
+      --blue-soft: #d9e6e9;
+      --yellow: #dfb73b;
+      --shadow: 0 18px 60px rgba(42, 37, 26, .11);
+      --display: "STKaiti", "KaiTi", "FangSong", "Noto Serif CJK SC", serif;
+      --body: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+      --mono: "Cascadia Code", "JetBrains Mono", "Fira Code", Consolas, monospace;
+      --content: 1160px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; scroll-padding-top: 28px; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 8% 2%, rgba(200, 86, 45, .10), transparent 24rem),
+        radial-gradient(circle at 95% 18%, rgba(20, 100, 71, .10), transparent 28rem),
+        linear-gradient(90deg, transparent 0 49.8%, rgba(117, 111, 96, .035) 50%, transparent 50.2%),
+        var(--paper);
+      font-family: var(--body);
+      font-size: 17px;
+      line-height: 1.82;
+      text-rendering: optimizeLegibility;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 20;
+      opacity: .26;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.86' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.085'/%3E%3C/svg%3E");
+      mix-blend-mode: multiply;
+    }
+    a { color: var(--green); text-underline-offset: 4px; }
+    a:hover { color: var(--orange); }
+    button, input, select { font: inherit; }
+    button, a { -webkit-tap-highlight-color: transparent; }
+    :focus-visible {
+      outline: 3px solid #174f6a;
+      outline-offset: 3px;
+      box-shadow: 0 0 0 6px rgba(250, 246, 233, .96);
+    }
+    ::selection { color: var(--ink); background: rgba(223, 183, 59, .45); }
+
+    .skip-link {
+      position: fixed;
+      left: 18px;
+      top: 10px;
+      z-index: 100;
+      padding: 10px 14px;
+      color: var(--paper-soft);
+      background: var(--ink);
+      border: 2px solid var(--yellow);
+      transform: translateY(-160%);
+      transition: transform .15s ease;
+    }
+    .skip-link:focus { transform: translateY(0); }
+
+    .scroll-progress {
+      position: fixed;
+      inset: 0 0 auto;
+      height: 4px;
+      background: rgba(32, 40, 34, .12);
+      z-index: 50;
+      pointer-events: none;
+    }
+    .scroll-progress > span {
+      display: block;
+      width: 0;
+      height: 100%;
+      background: linear-gradient(90deg, var(--green), var(--orange));
+    }
+    .page { width: min(calc(100% - 36px), var(--content)); margin: 0 auto; }
+    .reading-rail {
+      position: fixed;
+      left: max(18px, calc(50vw - 730px));
+      top: 50%;
+      width: 154px;
+      transform: translateY(-50%);
+      z-index: 10;
+    }
+    .reading-rail .rail-title {
+      margin: 0 0 10px;
+      color: var(--ink-soft);
+      font: 700 11px/1.2 var(--mono);
+      letter-spacing: .15em;
+      text-transform: uppercase;
+    }
+    .reading-rail a {
+      display: block;
+      position: relative;
+      padding: 5px 0 5px 16px;
+      color: var(--ink-soft);
+      border-left: 1px solid var(--line);
+      font-size: 12px;
+      line-height: 1.2;
+      text-decoration: none;
+    }
+    .reading-rail a::before {
+      content: "";
+      position: absolute;
+      left: -3px;
+      top: 10px;
+      width: 5px;
+      height: 5px;
+      background: var(--paper);
+      border: 1px solid var(--line-strong);
+      border-radius: 50%;
+    }
+    .reading-rail a.active { color: var(--orange); font-weight: 700; border-left-color: var(--orange); }
+    .reading-rail a.active::before { background: var(--orange); border-color: var(--orange); }
+
+    .hero { min-height: 94vh; display: grid; align-items: center; padding: 72px 0 56px; }
+    .hero-sheet {
+      position: relative;
+      overflow: hidden;
+      padding: clamp(28px, 5vw, 72px);
+      background: rgba(250, 246, 233, .78);
+      border: 1px solid var(--line-strong);
+      box-shadow: var(--shadow);
+    }
+    .hero-sheet::after {
+      content: "INDEX / CASE 01";
+      position: absolute;
+      right: -44px;
+      top: 42px;
+      padding: 8px 54px;
+      color: var(--paper-soft);
+      background: var(--orange);
+      font: 700 11px/1 var(--mono);
+      letter-spacing: .14em;
+      transform: rotate(42deg);
+    }
+    .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 0 0 22px;
+      color: var(--green);
+      font: 700 12px/1.4 var(--mono);
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+    .eyebrow::before { content: ""; width: 42px; height: 2px; background: currentColor; }
+    h1, h2, h3, h4 { text-wrap: balance; }
+    h1 {
+      max-width: 900px;
+      margin: 0;
+      font: 900 clamp(52px, 9vw, 116px)/.96 var(--display);
+      letter-spacing: -.055em;
+    }
+    .hero h1 span { display: block; color: var(--orange); font-size: .39em; letter-spacing: .04em; margin-top: 18px; }
+    .hero-lead { max-width: 760px; margin: 34px 0 20px; font-size: clamp(18px, 2vw, 23px); line-height: 1.75; }
+    .hero-lead strong { color: var(--green); }
+    .hero-meta { display: flex; flex-wrap: wrap; gap: 10px; margin: 26px 0; }
+    .hero-meta span {
+      padding: 5px 10px;
+      color: var(--ink-soft);
+      border: 1px solid var(--line);
+      background: rgba(243, 237, 220, .72);
+      font: 700 12px/1.5 var(--mono);
+    }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
+    .action {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 46px;
+      padding: 9px 17px;
+      color: var(--paper-soft);
+      background: var(--green);
+      border: 1px solid var(--green);
+      font-weight: 700;
+      text-decoration: none;
+      cursor: pointer;
+      transition: transform .18s ease, box-shadow .18s ease, background .18s ease;
+    }
+    .action:hover { color: #fff; background: #0d523a; transform: translateY(-2px); box-shadow: 4px 5px 0 rgba(20,100,71,.18); }
+    .action.secondary { color: var(--ink); background: transparent; border-color: var(--line-strong); }
+    .action.secondary:hover { color: var(--ink); background: var(--orange-soft); }
+    .hero-principle {
+      position: relative;
+      margin: 50px 0 0 auto;
+      max-width: 700px;
+      padding: 22px 24px 20px 72px;
+      color: var(--ink);
+      background: var(--green-soft);
+      border-left: 5px solid var(--green);
+      transform: rotate(-.6deg);
+    }
+    .hero-principle::before { content: "“"; position: absolute; left: 20px; top: -4px; color: var(--green); font: 72px/1 var(--display); }
+    .hero-principle p { margin: 0; font-family: var(--display); font-size: 22px; font-weight: 700; }
+
+    .mobile-toc { display: none; margin-top: 26px; border-top: 1px dashed var(--line-strong); }
+    .mobile-toc summary { padding: 14px 0; cursor: pointer; font-weight: 700; }
+    .mobile-toc nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 18px; padding: 0 0 18px; }
+    .mobile-toc a { color: var(--ink-soft); font-size: 14px; text-decoration: none; }
+
+    .chapter { position: relative; padding: clamp(72px, 10vw, 132px) 0; border-top: 1px solid var(--line); }
+    .chapter-heading { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 26px; align-items: start; margin-bottom: 52px; }
+    .chapter-no {
+      color: var(--orange);
+      border-top: 4px solid currentColor;
+      padding-top: 9px;
+      font: 800 28px/1 var(--mono);
+      letter-spacing: -.05em;
+    }
+    .chapter-kicker { margin: 0 0 7px; color: var(--green); font: 700 12px/1.4 var(--mono); letter-spacing: .14em; text-transform: uppercase; }
+    h2 { margin: 0; font: 900 clamp(36px, 5.5vw, 66px)/1.08 var(--display); letter-spacing: -.045em; }
+    .chapter-intro { max-width: 830px; margin: 17px 0 0; color: var(--ink-soft); font-size: 20px; }
+    h3 { margin: 50px 0 16px; font: 900 clamp(26px, 3vw, 36px)/1.2 var(--display); letter-spacing: -.025em; }
+    h4 { margin: 28px 0 10px; font-size: 19px; }
+    p { margin: 0 0 18px; }
+    .lede { font-size: 21px; color: var(--ink-soft); }
+    .big-claim {
+      max-width: 980px;
+      margin: 54px auto;
+      font: 900 clamp(30px, 5vw, 54px)/1.28 var(--display);
+      letter-spacing: -.035em;
+      text-align: center;
+    }
+    .big-claim em { color: var(--orange); font-style: normal; }
+
+    .case-file {
+      position: relative;
+      padding: clamp(24px, 4vw, 46px);
+      background: var(--paper-soft);
+      border: 1px solid var(--line-strong);
+      box-shadow: 8px 10px 0 rgba(117, 111, 96, .12);
+    }
+    .case-file::before {
+      content: "EVIDENCE";
+      position: absolute;
+      right: 22px;
+      top: 18px;
+      color: rgba(148, 59, 47, .72);
+      border: 2px solid currentColor;
+      padding: 3px 8px;
+      font: 900 11px/1.3 var(--mono);
+      letter-spacing: .12em;
+      transform: rotate(3deg);
+    }
+    .case-file h3 { margin-top: 0; padding-right: 90px; }
+    .case-grid { display: grid; grid-template-columns: 1.25fr .75fr; gap: 28px; align-items: start; }
+    .facts { margin: 0; padding: 0; list-style: none; }
+    .facts li { display: grid; grid-template-columns: 124px 1fr; gap: 14px; padding: 10px 0; border-bottom: 1px dashed var(--line); }
+    .facts strong { color: var(--ink-soft); font: 700 12px/1.6 var(--mono); letter-spacing: .04em; text-transform: uppercase; }
+    .metric-stack { display: grid; gap: 10px; }
+    .metric { padding: 16px; background: var(--ink); color: var(--paper-soft); }
+    .metric span { display: block; color: #bbc7bd; font: 700 11px/1.2 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+    .metric b { display: block; margin-top: 8px; color: #fff1dc; font: 900 30px/1 var(--mono); }
+    .caption { color: var(--ink-soft); font-size: 13px; }
+
+    .columns-2, .columns-3 { display: grid; gap: 24px; }
+    .columns-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .columns-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .note {
+      padding: 24px;
+      background: rgba(250, 246, 233, .66);
+      border-top: 4px solid var(--line-strong);
+    }
+    .note h3, .note h4 { margin-top: 0; }
+    .note.green { border-color: var(--green); background: rgba(216, 231, 216, .68); }
+    .note.orange { border-color: var(--orange); background: rgba(243, 215, 191, .65); }
+    .note.blue { border-color: var(--blue); background: rgba(217, 230, 233, .68); }
+    .tag { display: inline-block; margin-bottom: 12px; color: var(--ink-soft); font: 800 11px/1.3 var(--mono); letter-spacing: .11em; text-transform: uppercase; }
+    .rule {
+      margin: 32px 0;
+      padding: 22px 26px;
+      background: var(--ink);
+      color: var(--paper-soft);
+      border-left: 7px solid var(--orange);
+      font-family: var(--display);
+      font-size: 21px;
+      font-weight: 700;
+    }
+    .rule strong { color: #ffc68f; }
+    .caution { border-left-color: var(--red); }
+    .db-callout { position: relative; margin: 30px 0; padding: 24px 26px 22px 66px; border: 1px dashed var(--line-strong); background: rgba(250, 246, 233, .48); }
+    .db-callout::before { position: absolute; left: 18px; top: 20px; font: 900 14px/1 var(--mono); transform: rotate(-4deg); }
+    .db-callout.pg::before { content: "PG"; color: var(--blue); }
+    .db-callout.mysql::before { content: "MY"; color: var(--orange); }
+    .db-callout h4 { margin-top: 0; }
+
+    code { font-family: var(--mono); font-size: .9em; }
+    :not(pre) > code { padding: .12em .36em; background: rgba(32, 40, 34, .09); border: 1px solid rgba(32, 40, 34, .12); }
+    .code-wrap { position: relative; margin: 22px 0; }
+    pre {
+      overflow-x: auto;
+      margin: 0;
+      padding: 25px 22px;
+      color: #e8f0e8;
+      background: #1d2722;
+      border-left: 5px solid var(--green);
+      font: 14px/1.75 var(--mono);
+      tab-size: 2;
+    }
+    .copy-code {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      min-width: 44px;
+      min-height: 44px;
+      padding: 8px 11px;
+      color: #dfe8df;
+      background: #334139;
+      border: 1px solid #65736a;
+      font: 700 11px/1.3 var(--mono);
+      cursor: pointer;
+    }
+    .copy-code:hover { background: #46554c; }
+    .sql-key { color: #86d7ae; }
+    .sql-lit { color: #ffc98e; }
+    .sql-com { color: #91a097; }
+    .plan { color: #e4dfcc; background: #27251f; border-left-color: var(--orange); }
+    .plan .hot { color: #ffb276; font-weight: 700; }
+    .plan .good { color: #93d2a8; font-weight: 700; }
+
+    .diagram {
+      margin: 28px 0;
+      padding: clamp(18px, 3vw, 32px);
+      background: rgba(250, 246, 233, .56);
+      border: 1px solid var(--line);
+    }
+    .diagram-title { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; margin-bottom: 22px; }
+    .diagram-title h3, .diagram-title h4 { margin: 0; }
+    .diagram-title span { color: var(--ink-soft); font: 12px/1.4 var(--mono); }
+    .page-map { display: grid; grid-template-columns: 1fr auto 1fr; gap: 24px; align-items: center; }
+    .disk-pages { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+    .disk-page { aspect-ratio: 1.15; display: grid; place-items: center; color: var(--ink-soft); background: var(--paper-deep); border: 1px solid var(--line); font: 11px/1 var(--mono); }
+    .disk-page.hit { color: white; background: var(--orange); border-color: var(--orange); }
+    .arrow { color: var(--orange); font-size: 34px; }
+    .index-slip { display: grid; grid-template-columns: 1.2fr .8fr; border: 1px solid var(--green); font: 12px/1.3 var(--mono); }
+    .index-slip span { padding: 7px 9px; border-bottom: 1px solid rgba(20,100,71,.25); }
+    .index-slip span:nth-child(odd) { color: var(--green); background: var(--green-soft); }
+
+    .steps { counter-reset: step; display: grid; gap: 14px; margin: 28px 0; }
+    .step { counter-increment: step; display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 16px; align-items: start; padding: 18px 0; border-bottom: 1px dashed var(--line); }
+    .step::before { content: counter(step, decimal-leading-zero); display: grid; place-items: center; width: 44px; height: 44px; color: var(--paper-soft); background: var(--green); font: 800 14px/1 var(--mono); transform: rotate(-2deg); }
+    .step h4 { margin: 0 0 4px; }
+    .step p { margin: 0; color: var(--ink-soft); }
+
+    .lab {
+      margin: 42px 0;
+      padding: clamp(22px, 4vw, 38px);
+      color: var(--ink);
+      background: rgba(250, 246, 233, .82);
+      border: 2px solid var(--ink);
+      box-shadow: 9px 11px 0 rgba(32,40,34,.12);
+    }
+    .lab-header { display: flex; justify-content: space-between; gap: 18px; align-items: start; margin-bottom: 28px; }
+    .lab-header h3 { margin: 0; }
+    .lab-index { flex: 0 0 auto; padding: 5px 9px; color: var(--paper-soft); background: var(--orange); font: 800 11px/1.4 var(--mono); letter-spacing: .1em; }
+    .lab-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin: 22px 0 28px; }
+    .field label { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 8px; font: 700 13px/1.4 var(--mono); }
+    .field output { color: var(--orange); }
+    .field input[type="range"] { width: 100%; min-height: 44px; accent-color: var(--green); }
+    .lab-results { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .lab-result { padding: 18px; border-top: 4px solid var(--line-strong); background: var(--paper); }
+    .lab-result.active { border-color: var(--green); background: var(--green-soft); }
+    .lab-result span { display: block; color: var(--ink-soft); font: 700 11px/1.3 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+    .lab-result b { display: block; margin: 9px 0 4px; font: 900 28px/1 var(--mono); }
+    .lab-result small { color: var(--ink-soft); }
+    .scan-track { display: grid; grid-template-columns: repeat(24, 1fr); gap: 3px; margin-top: 20px; }
+    .scan-track i { height: 18px; background: var(--paper-deep); border: 1px solid var(--line); transition: background .2s ease; }
+    .scan-track i.read { background: var(--orange); border-color: var(--orange); }
+    .scan-track i.index-read { background: var(--green); border-color: var(--green); }
+    .lab-note { margin: 18px 0 0; color: var(--ink-soft); font-size: 13px; }
+
+    .tree-stage { min-height: 280px; display: grid; align-content: center; gap: 26px; overflow-x: auto; padding: 6px 4px 12px; }
+    .tree-level { display: flex; justify-content: center; gap: clamp(4px, 1.4vw, 18px); min-width: max-content; position: relative; }
+    .tree-node { min-width: 56px; padding: 8px 10px; text-align: center; color: var(--ink); background: var(--paper-deep); border: 1px solid var(--line-strong); font: 700 11px/1.3 var(--mono); transition: transform .25s ease, background .25s ease; }
+    .tree-level:first-child .tree-node { color: white; background: var(--green); border-color: var(--green); }
+    .tree-level:last-child .tree-node { background: var(--orange-soft); }
+    .tree-labels { display: flex; justify-content: center; gap: 26px; color: var(--ink-soft); font: 11px/1.3 var(--mono); }
+
+    .plan-box { margin: 28px 0; border: 1px solid var(--line-strong); background: #24271f; color: #e7eadb; }
+    .plan-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; padding: 12px 16px; color: #b8c3b7; background: #30362e; border-bottom: 1px solid #4f594f; font: 700 11px/1.4 var(--mono); letter-spacing: .07em; }
+    .plan-lines { padding: 18px; overflow-x: auto; font: 13px/1.7 var(--mono); }
+    .plan-line { display: block; min-width: max-content; padding: 2px 6px; border-left: 3px solid transparent; }
+    .plan-line[data-kind="danger"] { color: #ffbd91; background: rgba(200,86,45,.13); border-left-color: #e8794e; }
+    .plan-line[data-kind="good"] { color: #a7d9b9; background: rgba(80,152,101,.13); border-left-color: #72ba89; }
+    .plan-line[data-kind="estimate"] { color: #f0df91; background: rgba(223,183,59,.12); border-left-color: #dfb73b; }
+    .plan-legend { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+    .plan-legend div { padding: 14px; border-top: 3px solid var(--line-strong); background: rgba(250,246,233,.6); }
+    .plan-legend b { display: block; font-family: var(--mono); font-size: 13px; }
+    .plan-legend span { color: var(--ink-soft); font-size: 13px; }
+
+    .table-wrap { width: 100%; overflow-x: auto; margin: 24px 0; border-top: 3px solid var(--ink); }
+    table { width: 100%; border-collapse: collapse; background: rgba(250,246,233,.42); font-size: 14px; }
+    th, td { min-width: 130px; padding: 13px 14px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+    th { color: var(--paper-soft); background: var(--ink); font: 800 12px/1.4 var(--mono); letter-spacing: .04em; }
+    td:first-child { font-weight: 700; }
+    tbody tr:hover { background: rgba(223,183,59,.08); }
+
+    .index-options { display: flex; flex-wrap: wrap; gap: 9px; margin: 18px 0; }
+    .index-option {
+      min-height: 44px;
+      padding: 10px 12px;
+      color: var(--ink);
+      background: transparent;
+      border: 1px solid var(--line-strong);
+      font: 700 12px/1.3 var(--mono);
+      cursor: pointer;
+    }
+    .index-option[aria-pressed="true"] { color: var(--paper-soft); background: var(--green); border-color: var(--green); }
+    .index-columns { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; min-height: 58px; padding: 14px; background: var(--paper); border: 1px dashed var(--line-strong); }
+    .index-columns .key {
+      position: relative;
+      padding: 9px 11px 9px 28px;
+      background: var(--paper-deep);
+      border: 1px solid var(--line-strong);
+      font: 700 12px/1.2 var(--mono);
+    }
+    .index-columns .key::before { content: attr(data-pos); position: absolute; left: 8px; color: var(--ink-soft); }
+    .index-columns .key.navigate { color: #fff; background: var(--green); border-color: var(--green); }
+    .index-columns .key.range { color: #fff; background: var(--orange); border-color: var(--orange); }
+    .index-columns .key.filter { background: var(--orange-soft); }
+    .index-columns .key.sort { box-shadow: inset 0 -4px 0 var(--blue); }
+    .key-legend { display: flex; flex-wrap: wrap; gap: 10px 18px; margin: 12px 0 0; color: var(--ink-soft); font-size: 12px; }
+    .key-legend span::before { content: "■"; margin-right: 5px; color: var(--line-strong); }
+    .key-legend .nav::before { color: var(--green); }
+    .key-legend .rng::before { color: var(--orange); }
+    .key-legend .flt::before { color: var(--orange-soft); text-shadow: 0 0 0 var(--line); }
+    .key-legend .srt::before { color: var(--blue); }
+    .builder-verdict { display: grid; grid-template-columns: 1.4fr .6fr; gap: 16px; margin-top: 20px; }
+    .verdict-copy { padding: 18px; background: var(--green-soft); border-left: 4px solid var(--green); }
+    .verdict-copy b { display: block; margin-bottom: 5px; font-family: var(--display); font-size: 21px; }
+    .verdict-score { display: grid; place-items: center; padding: 16px; color: var(--paper-soft); background: var(--ink); text-align: center; }
+    .verdict-score b { display: block; color: #ffd59e; font: 900 30px/1 var(--mono); }
+    .verdict-score span { font-size: 12px; }
+
+    .split-flow { display: grid; grid-template-columns: 1fr 60px 1fr; gap: 18px; align-items: stretch; margin: 30px 0; }
+    .flow-side { padding: 24px; background: rgba(250,246,233,.6); border-top: 4px solid var(--line-strong); }
+    .flow-side h3 { margin-top: 0; }
+    .flow-side ol { padding-left: 22px; }
+    .flow-side.pg-flow { border-color: var(--blue); }
+    .flow-side.my-flow { border-color: var(--orange); }
+    .flow-divider { display: grid; place-items: center; color: var(--ink-soft); font: 800 12px/1.2 var(--mono); writing-mode: vertical-rl; letter-spacing: .12em; }
+
+    .tool-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 30px 0; }
+    .tool-card { position: relative; min-height: 230px; padding: 23px; background: rgba(250,246,233,.62); border: 1px solid var(--line); transition: transform .18s ease, box-shadow .18s ease; }
+    .tool-card:hover { transform: translateY(-3px) rotate(-.2deg); box-shadow: 5px 7px 0 rgba(32,40,34,.09); }
+    .tool-card::after { content: attr(data-code); position: absolute; right: 14px; top: 12px; color: var(--line-strong); font: 800 10px/1 var(--mono); letter-spacing: .08em; }
+    .tool-card h3 { margin: 8px 0 8px; font-size: 28px; }
+    .tool-card p { font-size: 14px; }
+    .tool-card .best { color: var(--green); font-weight: 700; }
+    .tool-card .cost { color: var(--orange); font-weight: 700; }
+    details.deep-dive { margin: 18px 0; border-top: 1px dashed var(--line-strong); border-bottom: 1px dashed var(--line-strong); }
+    details.deep-dive summary { padding: 14px 2px; cursor: pointer; font-weight: 800; }
+    details.deep-dive[open] summary { color: var(--green); }
+    details.deep-dive > div { padding: 0 2px 18px; }
+
+    .type-questions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 20px 0; }
+    .type-question { display: grid; gap: 7px; }
+    .type-question label { font: 700 12px/1.4 var(--mono); }
+    .type-question select { width: 100%; padding: 10px; color: var(--ink); background: var(--paper-soft); border: 1px solid var(--line-strong); }
+    .type-answer { padding: 22px; background: var(--blue-soft); border-left: 5px solid var(--blue); }
+    .type-answer b { display: block; margin-bottom: 4px; font: 900 25px/1.2 var(--display); }
+
+    .cost-meter { display: grid; gap: 11px; margin: 20px 0; }
+    .cost-row { display: grid; grid-template-columns: 145px 1fr 72px; gap: 12px; align-items: center; }
+    .cost-row span { font: 700 12px/1.3 var(--mono); }
+    .cost-bar { height: 20px; background: var(--paper-deep); border: 1px solid var(--line); }
+    .cost-bar i { display: block; width: 0; height: 100%; background: var(--green); transition: width .3s ease; }
+    .cost-row:nth-child(2) .cost-bar i { background: var(--orange); }
+    .cost-row:nth-child(3) .cost-bar i { background: var(--blue); }
+    .cost-row output { color: var(--ink-soft); text-align: right; font: 700 12px/1.3 var(--mono); }
+
+    .timeline { position: relative; display: grid; gap: 0; margin: 34px 0; }
+    .timeline::before { content: ""; position: absolute; left: 21px; top: 20px; bottom: 20px; width: 2px; background: var(--line); }
+    .timeline-item { position: relative; display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 18px; padding: 13px 0; }
+    .timeline-item::before { content: attr(data-step); z-index: 1; display: grid; place-items: center; width: 44px; height: 44px; color: var(--paper-soft); background: var(--ink); border-radius: 50%; font: 800 12px/1 var(--mono); }
+    .timeline-item h4 { margin: 0 0 4px; }
+    .timeline-item p { margin: 0; color: var(--ink-soft); }
+
+    .api-table td:nth-child(2) { color: var(--red); }
+    .api-table td:nth-child(3) { color: var(--green); }
+
+    .pagination-stage { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+    .lane { position: relative; min-height: 168px; padding: 16px; border-top: 4px solid var(--line-strong); background: var(--paper); }
+    .lane h4 { margin-top: 0; }
+    .items { display: flex; flex-wrap: wrap; gap: 3px; margin: 14px 0; }
+    .items i { width: 15px; height: 18px; background: var(--paper-deep); border: 1px solid var(--line); }
+    .items i.discard { background: var(--orange-soft); border-color: var(--orange); }
+    .items i.return { background: var(--green); border-color: var(--green); }
+    .lane-stat { font: 800 12px/1.4 var(--mono); }
+    .lane.cursor { border-top-color: var(--green); }
+
+    .quiz-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 30px 0; }
+    .quiz-card { min-height: 210px; padding: 22px; background: rgba(250,246,233,.65); border: 1px solid var(--line); }
+    .quiz-card p { min-height: 62px; font-family: var(--display); font-size: 20px; font-weight: 800; }
+    .quiz-actions { display: flex; gap: 8px; }
+    .quiz-actions button { flex: 1; min-height: 44px; padding: 8px; color: var(--ink); background: transparent; border: 1px solid var(--line-strong); cursor: pointer; font-weight: 700; }
+    .quiz-actions button:hover { background: var(--paper-deep); }
+    .quiz-actions button:disabled { cursor: not-allowed; opacity: .68; background: var(--paper-deep); }
+    .quiz-answer { min-height: 48px; margin-top: 14px; color: var(--ink-soft); font-size: 13px; }
+    .quiz-card.correct { border-color: var(--green); box-shadow: inset 5px 0 0 var(--green); }
+    .quiz-card.wrong { border-color: var(--orange); box-shadow: inset 5px 0 0 var(--orange); }
+    .quiz-score { padding: 22px; color: var(--paper-soft); background: var(--ink); text-align: center; }
+    .quiz-score b { color: #ffd59e; font: 900 36px/1 var(--mono); }
+
+    .cheat-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 28px 0; }
+    .cheat-block { padding: 22px; background: rgba(250,246,233,.63); border-top: 5px solid var(--green); }
+    .cheat-block:nth-child(2n) { border-color: var(--orange); }
+    .cheat-block h3 { margin-top: 0; }
+    .cheat-block ul { margin: 0; padding-left: 20px; }
+    .source-list { display: grid; gap: 8px; padding: 0; list-style: none; }
+    .source-list li { padding: 10px 0; border-bottom: 1px dashed var(--line); }
+    .source-list a { font-weight: 700; }
+    .source-list span { display: block; color: var(--ink-soft); font-size: 13px; }
+    .site-footer { padding: 52px 0 70px; border-top: 1px solid var(--line-strong); text-align: center; }
+    .site-footer strong { display: block; font: 900 28px/1.2 var(--display); }
+    .site-footer p { color: var(--ink-soft); }
+
+    .reveal { opacity: 1; transform: none; }
+    .js .reveal { opacity: 0; transform: translateY(18px); transition: opacity .55s ease, transform .55s ease; }
+    .js .reveal.visible { opacity: 1; transform: none; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+
+    @media (max-width: 1500px) {
+      .reading-rail { display: none; }
+      .mobile-toc { display: block; }
+    }
+    @media (max-width: 820px) {
+      html, body { max-width: 100%; overflow-x: clip; }
+      body { font-size: 16px; }
+      .page { width: min(calc(100% - 24px), var(--content)); }
+      .hero { min-height: auto; padding-top: 26px; }
+      .hero-sheet { padding-top: 52px; }
+      .chapter-heading { grid-template-columns: 58px minmax(0, 1fr); gap: 16px; }
+      .chapter-no { font-size: 21px; }
+      .case-grid, .columns-2, .columns-3, .page-map { grid-template-columns: 1fr; }
+      .arrow { transform: rotate(90deg); text-align: center; }
+      .lab-controls, .lab-results { grid-template-columns: 1fr; }
+      .plan-legend, .tool-grid, .quiz-grid, .cheat-grid, .pagination-stage { grid-template-columns: 1fr; }
+      .builder-verdict, .split-flow { grid-template-columns: 1fr; }
+      .flow-divider { writing-mode: horizontal-tb; }
+      .type-questions { grid-template-columns: 1fr; }
+      .facts li { grid-template-columns: 96px 1fr; }
+      .hero-principle { padding-left: 58px; }
+      .chapter, .columns-2, .columns-3, .case-file, .lab, .plan-box { min-width: 0; }
+      .table-wrap, .plan-lines, pre, .tree-stage { max-width: 100%; }
+    }
+    @media (max-width: 520px) {
+      h1 { font-size: 49px; }
+      .hero-sheet::after { right: -60px; top: 29px; }
+      .chapter { padding: 68px 0; }
+      .chapter-heading { grid-template-columns: 1fr; }
+      .chapter-no { width: 58px; }
+      .hero-actions .action { width: 100%; }
+      .case-file { padding: 22px 16px; }
+      .case-file::before { position: static; display: inline-block; margin-bottom: 16px; }
+      .case-file h3 { padding-right: 0; }
+      .facts li { grid-template-columns: 1fr; gap: 2px; }
+      pre { font-size: 12px; }
+      .lab { padding: 20px 14px; box-shadow: 5px 6px 0 rgba(32,40,34,.12); }
+      .lab-header { display: block; }
+      .lab-index { display: inline-block; margin-top: 12px; }
+      .tree-node:nth-child(n+9) { display: none; }
+      .cost-row { grid-template-columns: 100px 1fr; }
+      .cost-row output { grid-column: 2; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+      .js .reveal { opacity: 1; transform: none; }
+    }
+    @media print {
+      @page { size: A4; margin: 14mm; }
+      body { background: white; color: black; font-size: 10.5pt; }
+      body::before, .skip-link, .scroll-progress, .reading-rail, .mobile-toc, .hero-actions, .copy-code, .lab-controls, .quiz-actions, .action, .site-footer { display: none !important; }
+      .page { width: 100%; }
+      .hero { min-height: 0; padding: 0 0 16mm; }
+      .hero-sheet, .case-file, .lab { box-shadow: none; background: white; }
+      .chapter { padding: 9mm 0; break-before: auto; }
+      .chapter-heading, h3 { break-after: avoid; }
+      .js .reveal { opacity: 1 !important; transform: none !important; }
+      pre { white-space: pre-wrap; break-inside: avoid; }
+      .plan-lines, .table-wrap { overflow: visible; }
+      .plan-line { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+      table { table-layout: fixed; font-size: 8.5pt; }
+      th, td { min-width: 0; padding: 6px 7px; overflow-wrap: anywhere; }
+      a { color: black; text-decoration: none; }
+      a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 8pt; overflow-wrap: anywhere; }
+      .note, .diagram, .rule, .quiz-card { break-inside: avoid; }
+      thead { display: table-header-group; }
+      .quiz-answer:empty::before { content: attr(data-print); }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#prologue">跳到正文</a>
+  <div class="scroll-progress" aria-hidden="true"><span id="scroll-progress-bar"></span></div>
+
+  <aside class="reading-rail" aria-label="章节导航">
+    <p class="rail-title">Case notebook</p>
+    <nav>
+      <a href="#prologue">00 案发现场</a>
+      <a href="#pages">01 页与代价</a>
+      <a href="#btree">02 B+Tree</a>
+      <a href="#planner">03 执行计划</a>
+      <a href="#composite">04 联合索引</a>
+      <a href="#covering">05 覆盖与回表</a>
+      <a href="#toolbox">06 索引工具箱</a>
+      <a href="#big-data">07 亿级数据</a>
+      <a href="#api-design">08 接口设计</a>
+      <a href="#playbook">09 排查手册</a>
+      <a href="#labs">10 动手实验</a>
+      <a href="#quiz">11 迷思小测</a>
+      <a href="#cheatsheet">12 速查表</a>
+    </nav>
+  </aside>
+
+  <header class="hero page" id="top">
+    <div class="hero-sheet reveal">
+      <p class="eyebrow">Database field manual · PostgreSQL first</p>
+      <h1>数据库索引原理<span>一份慢 SQL 侦探手册</span></h1>
+      <p class="hero-lead">索引不是“给字段加个加速器”，而是在<strong>读放大、写放大、空间和稳定性</strong>之间做选择。本教程从一个 4.8 秒的订单接口出发，把底层原理一路接到可落地的排查动作。</p>
+      <div class="hero-meta" aria-label="教程范围">
+        <span>PG 14+ 主线</span>
+        <span>MySQL 8.x 对照</span>
+        <span>4 个交互实验</span>
+        <span>百万行可运行 SQL</span>
+        <span>前后端共同语言</span>
+      </div>
+      <div class="hero-actions">
+        <a class="action" href="#prologue">打开案卷 ↓</a>
+        <a class="action secondary" href="labs/postgresql.sql" download>下载 PG 实验 SQL</a>
+        <a class="action secondary" href="labs/mysql.sql" download>下载 MySQL 对照 SQL</a>
+      </div>
+      <blockquote class="hero-principle">
+        <p>接口慢，不一定缺索引；索引存在，也不代表查询就该走它。</p>
+      </blockquote>
+      <details class="mobile-toc">
+        <summary>展开章节目录</summary>
+        <nav>
+          <a href="#prologue">00 案发现场</a><a href="#pages">01 页与代价</a>
+          <a href="#btree">02 B+Tree</a><a href="#planner">03 执行计划</a>
+          <a href="#composite">04 联合索引</a><a href="#covering">05 覆盖与回表</a>
+          <a href="#toolbox">06 索引工具箱</a><a href="#big-data">07 亿级数据</a>
+          <a href="#api-design">08 接口设计</a><a href="#playbook">09 排查手册</a>
+          <a href="#labs">10 动手实验</a><a href="#quiz">11 迷思小测</a>
+          <a href="#cheatsheet">12 速查表</a>
+        </nav>
+      </details>
+    </div>
+  </header>
+
+  <main>
+    <section class="chapter page" id="prologue" data-nav="prologue">
+      <div class="chapter-heading reveal">
+        <div class="chapter-no">00</div>
+        <div>
+          <p class="chapter-kicker">The crime scene</p>
+          <h2>案发现场：订单接口突然慢了</h2>
+          <p class="chapter-intro">先别急着执行 <code>CREATE INDEX</code>。我们需要确认：慢在哪里、数据库读了多少、估算错了多少，以及这个接口究竟在向数据库索取什么。</p>
+        </div>
+      </div>
+
+      <article class="case-file reveal">
+        <h3>案件 #2026-ORDER-LIST</h3>
+        <div class="case-grid">
+          <div>
+            <ul class="facts">
+              <li><strong>接口</strong><span><code>GET /api/orders</code></span></li>
+              <li><strong>过滤</strong><span>租户、状态、近 30 天、可选用户</span></li>
+              <li><strong>排序</strong><span>创建时间倒序</span></li>
+              <li><strong>分页</strong><span><code>LIMIT 50 OFFSET 200000</code></span></li>
+              <li><strong>数据量</strong><span>8.6 亿行，持续写入</span></li>
+              <li><strong>现象</strong><span>CPU 不高，存储读突增，接口偶发超时</span></li>
+            </ul>
+            <p class="caption">以上数字是教学案例，不是通用基准；真正结论必须来自你的执行计划和 I/O 数据。</p>
+          </div>
+          <div class="metric-stack" aria-label="案例指标">
+            <div class="metric"><span>p95 latency</span><b>4.8s</b></div>
+            <div class="metric"><span>rows returned</span><b>50</b></div>
+            <div class="metric"><span>rows examined</span><b>12.4M</b></div>
+          </div>
+        </div>
+        <div class="code-wrap">
+          <pre><code><span class="sql-key">SELECT</span> id, user_id, status, total_cents, created_at
+<span class="sql-key">FROM</span> orders
+<span class="sql-key">WHERE</span> tenant_id = <span class="sql-lit">42</span>
+  <span class="sql-key">AND</span> status = <span class="sql-lit">'PAID'</span>
+  <span class="sql-key">AND</span> created_at &gt;= now() - interval <span class="sql-lit">'30 days'</span>
+<span class="sql-key">ORDER BY</span> created_at <span class="sql-key">DESC</span>
+<span class="sql-key">LIMIT</span> <span class="sql-lit">50</span> <span class="sql-key">OFFSET</span> <span class="sql-lit">200000</span>;</code></pre>
+        </div>
+      </article>
+
+      <p class="big-claim reveal">数据库优化的第一问不是“有没有索引”，而是：<em>为了得到 50 行，它做了多少无用功？</em></p>
+
+      <div class="columns-3 reveal">
+        <article class="note green">
+          <span class="tag">Question 01</span>
+          <h3>读了多少？</h3>
+          <p>看实际行数、循环次数、共享缓冲命中与读入缓冲页的数量。返回 50 行不代表只处理了 50 行。</p>
+        </article>
+        <article class="note orange">
+          <span class="tag">Question 02</span>
+          <h3>估得准吗？</h3>
+          <p>优化器根据统计信息选计划。估算 100 行、实际 100 万行，后续每一步都可能选错。</p>
+        </article>
+        <article class="note blue">
+          <span class="tag">Question 03</span>
+          <h3>顺序匹配吗？</h3>
+          <p>过滤、排序、返回列与索引布局是否一致，决定了扫描范围、排序开销与是否回表。</p>
+        </article>
+      </div>
+
+      <div class="rule reveal"><strong>破案主线：</strong>访问路径 = 数据如何存放 × 查询如何描述 × 优化器如何估算 × 当时的缓存与并发。</div>
+    </section>
+
+    <section class="chapter page" id="pages" data-nav="pages">
+      <div class="chapter-heading reveal">
+        <div class="chapter-no">01</div>
+        <div>
+          <p class="chapter-kicker">Pages before rows</p>
+          <h2>数据库真正搬运的是“页”</h2>
+          <p class="chapter-intro">SQL 写的是行，存储引擎付出的主要 I/O 单位却是页。理解这一点，才知道为什么“只查一行”也可能很贵。</p>
+        </div>
+      </div>
+
+      <div class="columns-2 reveal">
+        <div>
+          <h3>没有索引：逐页找证据</h3>
+          <p>顺序扫描会读取表的数据页，逐行判断谓词。它并不“低级”：当查询要返回表中很大比例的数据时，连续批量读取通常比大量随机跳转更划算。</p>
+          <p>所以优化器选择 <code>Seq Scan</code> 不等于数据库犯错。也许是选择性太差、表很小、统计信息失真，或随机 I/O 成本更高。</p>
+        </div>
+        <div>
+          <h3>有索引：先找地址，再拿证据</h3>
+          <p>PostgreSQL 的普通索引项通常指向堆表中的 tuple（可理解为页号 + 页内位置）；索引把候选范围缩小，再去堆页验证可见性并取完整行。</p>
+          <p>这次“从索引跳到表”的动作，就是常说的回表。候选越多、物理位置越分散，随机访问代价越明显。</p>
+        </div>
+      </div>
+
+      <figure class="diagram reveal">
+        <div class="diagram-title"><h3>同样找到 3 行，两条路径</h3><span>示意图 · 非真实页布局</span></div>
+        <div class="page-map">
+          <div>
+            <p class="tag">顺序扫描：读完整段</p>
+            <div class="disk-pages" aria-label="顺序扫描页示意">
+              <span class="disk-page">P01</span><span class="disk-page">P02</span><span class="disk-page hit">P03</span><span class="disk-page">P04</span><span class="disk-page">P05</span>
+              <span class="disk-page">P06</span><span class="disk-page hit">P07</span><span class="disk-page">P08</span><span class="disk-page">P09</span><span class="disk-page hit">P10</span>
+            </div>
+          </div>
+          <div class="arrow" aria-hidden="true">↔</div>
+          <div>
+            <p class="tag">索引扫描：先定位 TID</p>
+            <div class="index-slip" aria-label="索引项与堆地址示意">
+              <span>2026-08-08 09:10</span><span>→ P03 / #12</span>
+              <span>2026-08-08 09:12</span><span>→ P07 / #04</span>
+              <span>2026-08-08 09:18</span><span>→ P10 / #21</span>
+            </div>
+          </div>
+        </div>
+      </figure>
+
+      <div class="lab reveal" id="scan-lab">
+        <div class="lab-header">
+          <div>
+            <p class="chapter-kicker">Interactive experiment</p>
+            <h3>实验 1：什么时候全表扫反而合理？</h3>
+          </div>
+          <span class="lab-index">LAB 01 / ACCESS PATH</span>
+        </div>
+        <p>拖动参数，观察三种访问路径的“相对工作量”。这是帮助建立直觉的简化模型，不是 PostgreSQL 成本公式或性能承诺。</p>
+        <div class="lab-controls">
+          <div class="field">
+            <label for="scan-rows">表行数 <output id="scan-rows-out">1,000,000</output></label>
+            <input id="scan-rows" type="range" min="3" max="9" value="6" step="1">
+          </div>
+          <div class="field">
+            <label for="scan-selectivity">命中比例 <output id="scan-selectivity-out">1%</output></label>
+            <input id="scan-selectivity" type="range" min="-3" max="1.7" value="0" step="0.1">
+          </div>
+          <div class="field">
+            <label for="scan-cache">缓存热度 <output id="scan-cache-out">60%</output></label>
+            <input id="scan-cache" type="range" min="0" max="100" value="60" step="5">
+          </div>
+        </div>
+        <div class="lab-results">
+          <div class="lab-result" id="seq-result"><span>Seq Scan</span><b id="seq-cost">—</b><small>顺序读完整表页</small></div>
+          <div class="lab-result" id="index-result"><span>Index Scan</span><b id="index-cost">—</b><small>B+Tree 定位 + 随机回表</small></div>
+          <div class="lab-result" id="bitmap-result"><span>Bitmap Scan</span><b id="bitmap-cost">—</b><small>先收集位置，再按页批量取</small></div>
+        </div>
+        <div class="scan-track" id="scan-track" role="img" aria-label="页读取比例示意"></div>
+        <p class="lab-note" id="scan-verdict" role="status" aria-live="polite" aria-atomic="true">正在计算建议访问路径……</p>
+      </div>
+
+      <h3 class="reveal">“选择性”不是字段的永久属性</h3>
+      <p class="reveal">选择性描述的是某个谓词能把数据缩小到什么程度。<code>status = 'PAID'</code> 可能命中 70%，单独索引价值有限；但在 <code>tenant_id = 42 AND status = 'PAID' AND created_at &gt;= ...</code> 里，它是联合访问路径的一部分。优化的是<strong>真实查询模式</strong>，不是孤立字段。</p>
+      <div class="rule caution reveal"><strong>别背“低基数字段不能建索引”。</strong>部分索引、联合索引、覆盖读取和数据分布都可能改变结论；让执行计划和业务谓词说话。</div>
+    </section>
+
+    <section class="chapter page" id="btree" data-nav="btree">
+      <div class="chapter-heading reveal">
+        <div class="chapter-no">02</div>
+        <div>
+          <p class="chapter-kicker">The default workhorse</p>
+          <h2>B+Tree：为什么几层就能找到海量数据</h2>
+          <p class="chapter-intro">PostgreSQL 和 InnoDB 的默认通用索引都建立在多路平衡树思想上。工程实现各有细节，但共同目标是：保持有序、降低树高、让等值与范围查询稳定。</p>
+        </div>
+      </div>
+
+      <div class="columns-3 reveal">
+        <article class="note green"><span class="tag">Root</span><h3>根页</h3><p>搜索入口。缓存稳定时，它通常很容易留在内存中。</p></article>
+        <article class="note blue"><span class="tag">Internal</span><h3>内部页</h3><p>保存分隔键与子页指针；一次比较排除大量分支。</p></article>
+        <article class="note orange"><span class="tag">Leaf</span><h3>叶子页</h3><p>保存有序索引项。相邻叶页支持范围扫描和有序输出。</p></article>
+      </div>
+
+      <div class="db-callout pg reveal">
+        <h4>术语说明：PostgreSQL 官方名称是 B-tree</h4>
+        <p>本章用“B+Tree 心智模型”帮助理解高扇出、叶层有序与范围扫描，但不把教科书结构和 PostgreSQL 的具体页格式画等号。实现细节以对应版本官方文档为准。</p>
+      </div>
+
+      <div class="steps reveal">
+        <article class="step"><div><h4>从根页比较搜索键</h4><p>例如寻找 <code>(tenant_id=42, created_at≈T)</code>，先确定落在哪个键区间。</p></div></article>
+        <article class="step"><div><h4>沿内部节点缩小范围</h4><p>每层都有很高扇出，一页可指向许多下级页，因此千万级甚至亿级记录也只需很少层。</p></div></article>
+        <article class="step"><div><h4>在叶子定位起点</h4><p>等值查询读取匹配项；范围查询从起点沿叶页继续扫描，直到越过终点。</p></div></article>
+        <article class="step"><div><h4>按地址访问可见行</h4><p>PG 通常再访问堆页检查 MVCC 可见性；满足 index-only 条件时可跳过多数堆访问。</p></div></article>
+      </div>
+
+      <div class="lab reveal" id="tree-lab">
+        <div class="lab-header">
+          <div>
+            <p class="chapter-kicker">Interactive experiment</p>
+            <h3>实验 2：树为什么一直不高？</h3>
+          </div>
+          <span class="lab-index">LAB 02 / FAN-OUT</span>
+        </div>
+        <p>假设每个内部页平均可指向若干子页。调整记录规模与扇出，观察估算树高。真实树高还受键宽、填充率、版本与页分裂等影响。</p>
+        <div class="lab-controls">
+          <div class="field">
+            <label for="tree-rows">索引项数量 <output id="tree-rows-out">100,000,000</output></label>
+            <input id="tree-rows" type="range" min="3" max="10" value="8" step="1">
+          </div>
+          <div class="field">
+            <label for="tree-fanout">平均扇出 <output id="tree-fanout-out">200</output></label>
+            <input id="tree-fanout" type="range" min="40" max="400" value="200" step="20">
+          </div>
+          <div class="lab-result active" role="status" aria-live="polite" aria-atomic="true"><span>估算层数</span><b id="tree-height">—</b><small>根到叶（含叶层）</small></div>
+        </div>
+        <div class="tree-stage" id="tree-stage" role="img" aria-label="B+Tree 层级示意" tabindex="0"></div>
+        <p class="lab-note">扇出越高，树越矮；但“树高很低”只说明定位索引项便宜，不代表返回大量行和回表也便宜。</p>
+      </div>
+
+      <div class="columns-2 reveal">
+        <div class="note green">
+          <h3>B+Tree 擅长</h3>
+          <p><code>=</code>、<code>&lt;</code>、<code>&lt;=</code>、<code>&gt;</code>、<code>&gt;=</code>、<code>BETWEEN</code>、前缀可利用的匹配、范围扫描，以及与索引顺序一致的 <code>ORDER BY</code>。</p>
+        </div>
+        <div class="note orange">
+          <h3>B+Tree 不擅长</h3>
+          <p>包含式数组/JSON 查询、任意位置模糊匹配、二维空间关系、与物理顺序高度相关的超大时序表摘要——这些有其他索引结构。</p>
+        </div>
+      </div>
+
+      <h3 class="reveal">页分裂：有序结构的写入账单</h3>
+      <p class="reveal">叶页满时需要分裂并更新上层结构。随机键可能把写入散布到许多页；单调递增键更集中，却可能形成右侧热点。索引越多，每次 <code>INSERT</code>/<code>UPDATE</code>/<code>DELETE</code> 要维护的结构越多，WAL、缓存占用和 vacuum 压力也随之增加。</p>
+      <div class="db-callout pg reveal">
+        <h4>PostgreSQL 的 MVCC 让故事更复杂</h4>
+        <p>更新通常产生新的 tuple 版本。若更新未涉及任何索引列、且同一堆页有空间，HOT 更新可以避免为新版本创建新的索引项；给“经常更新但不参与查询”的列乱加索引，可能顺手堵住这条优化路径。</p>
+      </div>
+      <div class="db-callout mysql reveal">
+        <h4>InnoDB 的主键就是数据组织方式</h4>
+        <p>聚簇索引的叶记录包含整行；二级索引叶记录保存二级键和主键值。因此主键过宽会被复制进每个二级索引，放大空间和 I/O 成本。</p>
+      </div>
+    </section>
+
+    <section class="chapter page" id="planner" data-nav="planner">
+      <div class="chapter-heading reveal">
+        <div class="chapter-no">03</div>
+        <div>
+          <p class="chapter-kicker">Read the evidence</p>
+          <h2>执行计划：不要猜，让数据库作证</h2>
+          <p class="chapter-intro"><code>EXPLAIN</code> 展示优化器打算怎么做，<code>EXPLAIN ANALYZE</code> 则真正执行并记录实际情况。读计划的核心，是比较“它以为”和“实际发生”。</p>
+        </div>
+      </div>
+
+      <div class="code-wrap reveal">
+        <pre><code><span class="sql-key">EXPLAIN</span> (<span class="sql-key">ANALYZE</span>, <span class="sql-key">BUFFERS</span>)
+<span class="sql-key">SELECT</span> id, user_id, status, total_cents, created_at
+<span class="sql-key">FROM</span> orders
+<span class="sql-key">WHERE</span> tenant_id = <span class="sql-lit">42</span>
+  <span class="sql-key">AND</span> status = <span class="sql-lit">'PAID'</span>
+  <span class="sql-key">AND</span> created_at &gt;= now() - interval <span class="sql-lit">'30 days'</span>
+<span class="sql-key">ORDER BY</span> created_at <span class="sql-key">DESC</span>
+<span class="sql-key">LIMIT</span> <span class="sql-lit">50</span>;</code></pre>
+      </div>
+
+      <div class="plan-box reveal" aria-label="教学用执行计划示例">
+        <div class="plan-toolbar"><span>POSTGRESQL · ILLUSTRATIVE PLAN</span><span>重点不是背节点，而是看工作量</span></div>
+        <div class="plan-lines">
+          <span class="plan-line" data-kind="good">Limit  (cost=184220.11..184220.24 rows=50 width=40) (actual time=812.510..812.526 rows=50 loops=1)</span>
+          <span class="plan-line">└─ Sort  (cost=184220.11..184611.48 rows=156548 width=40) (actual time=812.508..812.516 rows=50 loops=1)</span>
+          <span class="plan-line">   Sort Key: created_at DESC</span>
+          <span class="plan-line">   Sort Method: top-N heapsort  Memory: 38kB</span>
+          <span class="plan-line" data-kind="danger">   └─ Seq Scan on orders  (cost=0.00..179020.00 rows=156548 width=40)</span>
+          <span class="plan-line" data-kind="estimate">      (actual time=0.031..785.327 rows=327411 loops=1)</span>
+          <span class="plan-line" data-kind="danger">      Rows Removed by Filter: 9,672,589</span>
+          <span class="plan-line" data-kind="danger">      Buffers: shared hit=18,410 read=71,742</span>
+        </div>
+      </div>
+      <p class="caption reveal">这是教学计划，数字不代表固定性能。真实计划随版本、统计信息、参数、缓存、硬件和并发而变化。</p>
+
+      <div class="plan-legend reveal">
+        <div><b>rows vs actual rows</b><span>估算与实际差几个数量级，说明选择性判断可能失真。</span></div>
+        <div><b>loops</b><span>节点总工作量要结合循环次数看；一次很快 × 十万次仍然很慢。</span></div>
+        <div><b>Buffers hit/read</b><span><code>hit</code> 是共享缓冲命中；<code>read</code> 表示块被读入 shared_buffers，可能来自操作系统缓存，并不等同于物理磁盘 I/O。</span></div>
+      </div>
+
+      <h3 class="reveal">先认识五条常见路径</h3>
+      <div class="table-wrap reveal">
+        <table>
+          <thead><tr><th>节点</th><th>人话</th><th>常见适用场景</th><th>排查重点</th></tr></thead>
+          <tbody>
+            <tr><td><code>Seq Scan</code></td><td>顺序读表页并过滤</td><td>返回比例大、表小、无可用索引</td><td>扫描多少页、过滤掉多少行</td></tr>
+            <tr><td><code>Index Scan</code></td><td>查索引，再逐条访问堆</td><td>命中比例低的点查/小范围</td><td>回表是否随机、候选是否过多</td></tr>
+            <tr><td><code>Bitmap Heap Scan</code></td><td>先汇总候选位置，再按堆页读取</td><td>中等选择性、组合多个索引</td><td>exact/lossy 块、recheck</td></tr>
+            <tr><td><code>Index Only Scan</code></td><td>返回列都在索引里，尽量不访堆</td><td>读取列少、表页多为 all-visible</td><td><code>Heap Fetches</code> 是否仍很高</td></tr>
+            <tr><td><code>Sort</code></td><td>把结果重新排序</td><td>访问路径不能提供目标顺序</td><td>方法、内存、是否写临时文件</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="columns-2 reveal">
+        <article class="note green">
+          <h3>看计划的顺序</h3>
+          <ol>
+            <li>从最深层数据源看起，再向上读。</li>
+            <li>比较每层估算行数与实际行数。</li>
+            <li>把 <code>actual rows × loops</code> 放进脑中。</li>
+            <li>找大量丢弃、重复循环、读页和落盘排序。</li>
+            <li>确认最终只为多少返回行付账。</li>
+          </ol>
+        </article>
+        <article class="note orange">
+          <h3>两条安全红线</h3>
+          <p><code>EXPLAIN ANALYZE</code> 会真实执行 SQL。对 <code>INSERT/UPDATE/DELETE</code> 使用时会产生写入、触发器、锁与 I/O；即便事务最后回滚，中间影响仍发生。</p>
+          <p>生产执行前评估查询时长和系统压力。先用普通 <code>EXPLAIN</code>、只读副本或受控参数，再决定是否实跑。</p>
+        </article>
+      </div>
+
+      <div class="rule reveal"><strong>成本不是毫秒。</strong>PG 计划中的 <code>cost</code> 是优化器的相对单位；只有使用 <code>ANALYZE</code> 后的 <code>actual time</code> 才是本次实际时间，而且它也不是跨环境基准。</div>
+
+      <h3 class="reveal">优化器靠什么猜？统计信息</h3>
+      <p class="reveal">PostgreSQL 会采样并记录空值比例、不同值数量、最常见值、直方图、物理相关性等信息。单列统计无法自动理解 <code>tenant_id</code> 与 <code>status</code> 的业务相关性；当多列相关性导致严重误估，可考虑扩展统计，而不是盲目提高所有列的统计目标。</p>
+      <div class="code-wrap reveal">
+        <pre><code><span class="sql-com">-- 更新 orders 的统计信息</span>
+<span class="sql-key">ANALYZE</span> orders;
+
+<span class="sql-com">-- 多列依赖与常见值组合：只在确有误估证据时创建</span>
+<span class="sql-key">CREATE STATISTICS</span> st_orders_tenant_status
+  (dependencies, mcv)
+<span class="sql-key">ON</span> tenant_id, status <span class="sql-key">FROM</span> orders;
+<span class="sql-key">ANALYZE</span> orders;</code></pre>
+      </div>
+      <div class="db-callout pg reveal">
+        <h4>不要用 <code>enable_seqscan = off</code> 证明索引“更好”</h4>
+        <p>它最多帮助做诊断对照，不能替代真实成本验证。强迫一条路径能跑，不代表它在生产分布、缓存和并发下更便宜。</p>
+      </div>
+    </section>
+
+    <section class="chapter page" id="composite" data-nav="composite">
+      <div class="chapter-heading reveal">
+        <div class="chapter-no">04</div>
+        <div>
+          <p class="chapter-kicker">One query, one shape</p>
+          <h2>联合索引：顺序是访问路径，不是口诀</h2>
+          <p class="chapter-intro">给 <code>tenant_id</code>、<code>status</code>、<code>created_at</code> 各建一个索引，和为订单列表设计一个联合索引，不是同一件事。</p>
+        </div>
+      </div>
+
+      <div class="columns-2 reveal">
+        <article>
+          <h3>三个单列索引</h3>
+          <p>PG 可能用 <code>BitmapAnd</code> 合并候选 TID，这对中等选择性很有价值。但位图组合通常不能直接交付 <code>created_at DESC</code> 的顺序，仍可能需要排序。</p>
+          <div class="code-wrap"><pre><code><span class="sql-key">CREATE INDEX</span> ON orders (tenant_id);
+<span class="sql-key">CREATE INDEX</span> ON orders (status);
+<span class="sql-key">CREATE INDEX</span> ON orders (created_at);</code></pre></div>
+        </article>
+        <article>
+          <h3>面向查询形状的联合索引</h3>
+          <p>索引先按租户分段，再按状态分段，然后在段内按时间和 ID 有序。它能把过滤边界与分页顺序放在同一条路径上。</p>
+          <div class="code-wrap"><pre><code><span class="sql-key">CREATE INDEX</span> idx_orders_feed
+<span class="sql-key">ON</span> orders
+  (tenant_id, status, created_at <span class="sql-key">DESC</span>, id <span class="sql-key">DESC</span>);</code></pre></div>
+        </article>
+      </div>
+
+      <div class="rule reveal"><strong>可操作启发：</strong>先放稳定的等值边界，再处理范围与排序，最后考虑返回列；但必须拿所有高频查询变体一起验证。</div>
+
+      <div class="lab reveal" id="composite-lab">
+        <div class="lab-header">
+          <div>
+            <p class="chapter-kicker">Interactive experiment</p>
+            <h3>实验 3：联合索引拼装台</h3>
+          </div>
+          <span class="lab-index">LAB 03 / COLUMN ORDER</span>
+        </div>
+        <p>先选择查询形状，再尝试不同索引。颜色表示列在当前查询中承担的角色，不表示数据库内部真的给列上色。</p>
+        <div class="index-options" role="group" aria-label="选择查询形状" id="query-shape-options">
+          <button class="index-option" type="button" aria-pressed="true" data-shape="a">A · 租户 + 状态 + 时间</button>
+          <button class="index-option" type="button" aria-pressed="false" data-shape="b">B · 租户 + 时间</button>
+          <button class="index-option" type="button" aria-pressed="false" data-shape="c">C · 用户订单历史</button>
+        </div>
+        <div class="index-options" role="group" aria-label="选择候选索引" id="index-candidate-options">
+          <button class="index-option" type="button" aria-pressed="true" data-index="tenant-status-time-id">tenant, status, time, id</button>
+          <button class="index-option" type="button" aria-pressed="false" data-index="tenant-time-id">tenant, time, id</button>
+          <button class="index-option" type="button" aria-pressed="false" data-index="tenant-user-time">tenant, user, time, id</button>
+          <button class="index-option" type="button" aria-pressed="false" data-index="status-tenant-time">status, tenant, time, id</button>
+        </div>
+        <div class="index-columns" id="index-columns"></div>
+        <div class="key-legend"><span class="nav">等值导航</span><span class="rng">范围边界</span><span class="flt">只能过滤/存在 gap</span><span class="srt">可提供排序</span></div>
+        <div class="builder-verdict" role="status" aria-live="polite" aria-atomic="true">
+          <div class="verdict-copy"><b id="index-verdict-title">正在分析……</b><span id="index-verdict-copy">请选择一个查询形状和候选索引。</span></div>
+          <div class="verdict-score"><div><b id="index-score">—</b><span>教学匹配度 / 100</span></div></div>
+        </div>
+      </div>
+
+      <h3 class="reveal">“最左匹配”应该怎么理解</h3>
+      <p class="reveal">对于多列 B-tree，领先列上的约束最能缩小需要扫描的索引范围。缺少领先列时，后续列不是“物理上消失”，数据库仍可能扫描索引并过滤，但通常不能直接跳到一个很小的连续区间；是否值得用，要看成本。</p>
+      <div class="db-callout pg reveal">
+        <h4>版本注：PostgreSQL 18 才加入多列 B-tree skip scan</h4>
+        <p>本教程以 PG 14–17 的保守基线讲解：缺少领先列通常无法高效定位。PG 18 的 skip scan 能在合适的数据分布下为缺失领先列重复发起定位，但它不是“列顺序从此不重要”。</p>
+      </div>
+      <div class="db-callout mysql reveal">
+        <h4>MySQL 8.x 也不是一句口诀能讲完</h4>
+        <p>InnoDB 联合索引遵循左前缀访问规律；MySQL 8.0.13 起对部分场景提供 Skip Scan。是否出现仍取决于成本、列分布、谓词与版本，以实际 <code>EXPLAIN</code> 为准。</p>
+      </div>
+
+      <div class="columns-2 reveal">
+        <article class="note green">
+          <h3>查询形状 A：状态必填</h3>
+          <div class="code-wrap"><pre><code><span class="sql-key">WHERE</span> tenant_id = $1
+  <span class="sql-key">AND</span> status = $2
+  <span class="sql-key">AND</span> (created_at, id) &lt; ($3, $4)
+<span class="sql-key">ORDER BY</span> created_at <span class="sql-key">DESC</span>, id <span class="sql-key">DESC</span>
+<span class="sql-key">LIMIT</span> <span class="sql-lit">50</span>;</code></pre></div>
+          <p><code>(tenant_id, status, created_at DESC, id DESC)</code> 很自然。</p>
+        </article>
+        <article class="note orange">
+          <h3>查询形状 B：状态不传</h3>
+          <div class="code-wrap"><pre><code><span class="sql-key">WHERE</span> tenant_id = $1
+  <span class="sql-key">AND</span> (created_at, id) &lt; ($2, $3)
+<span class="sql-key">ORDER BY</span> created_at <span class="sql-key">DESC</span>, id <span class="sql-key">DESC</span>
+<span class="sql-key">LIMIT</span> <span class="sql-lit">50</span>;</code></pre></div>
+          <p>中间缺少 <code>status</code>，跨状态的时间顺序不再天然连续；另一条 <code>(tenant_id, created_at DESC, id DESC)</code> 可能更合适。</p>
+        </article>
+      </div>
+
+      <h3 class="reveal">为什么排序要加 <code>id</code></h3>
+      <p class="reveal"><code>created_at</code> 可能重复。只按时间分页，会让边界不唯一，产生重复或遗漏风险。将唯一且稳定的 <code>id</code> 作为 tie-breaker，索引顺序、<code>ORDER BY</code> 和游标比较必须保持一致。</p>
+      <div class="rule caution reveal"><strong>不存在“一个完美索引覆盖所有可选条件”。</strong>给高频查询形状有限分型，远胜于为参数组合制造指数级索引。</div>
+    </section>
+
+    <section class="chapter page" id="covering" data-nav="covering">
+      <div class="chapter-heading reveal">
+        <div class="chapter-no">05</div>
+        <div>
+          <p class="chapter-kicker">Where is the row?</p>
+          <h2>回表与覆盖：PG 和 InnoDB 不是同一条路</h2>
+          <p class="chapter-intro">“回表”是方便沟通的词，但 PostgreSQL 堆表和 InnoDB 聚簇表的物理路径不同。混在一起讲，会直接带偏索引设计。</p>
+        </div>
+      </div>
+
+      <div class="split-flow reveal">
+        <article class="flow-side pg-flow">
+          <span class="tag">PostgreSQL heap</span>
+          <h3>索引项 → TID → 堆 tuple</h3>
+          <ol>
+            <li>B-tree 找到键与堆地址 TID。</li>
+            <li>访问堆页，依据 MVCC 判断版本可见性。</li>
+            <li>从可见 tuple 读取索引中没有的列。</li>
+          </ol>
+          <p><strong>Index Only Scan</strong> 只有在所需值可由索引返回、并且可见性条件允许时，才能免去堆访问。</p>
+        </article>
+        <div class="flow-divider">NOT THE SAME</div>
+        <article class="flow-side my-flow">
+          <span class="tag">MySQL / InnoDB</span>
+          <h3>二级索引 → 主键 → 聚簇记录</h3>
+          <ol>
+            <li>二级 B-tree 找到二级键和主键值。</li>
+            <li>用主键再次查聚簇 B-tree。</li>
+            <li>聚簇索引叶记录中取得整行。</li>
+          </ol>
+          <p>若二级索引已经包含查询所需列，就可能成为 covering index，避免第二次按主键查整行。</p>
+        </article>
+      </div>
+
+      <h3 class="reveal">PostgreSQL：<code>INCLUDE</code> 是载荷，不是导航键</h3>
+      <div class="code-wrap reveal">
+        <pre><code><span class="sql-key">CREATE INDEX</span> idx_orders_feed_cover
+<span class="sql-key">ON</span> orders (tenant_id, status, created_at <span class="sql-key">DESC</span>, id <span class="sql-key">DESC</span>)
+<span class="sql-key">INCLUDE</span> (user_id, total_cents);</code></pre>
+      </div>
+      <p class="reveal"><code>user_id</code> 和 <code>total_cents</code> 可以从索引叶项返回，但不能用来缩小这个索引的搜索范围，也不属于它的键顺序。宽列会膨胀索引项，甚至触碰索引元组大小限制。</p>
+
+      <div class="columns-3 reveal">
+        <article class="note green"><span class="tag">Requirement 01</span><h3>值在索引里</h3><p>查询所需列必须能由索引类型保存或重建；B-tree 总是支持，GIN 通常不支持 index-only scan。</p></article>
+        <article class="note blue"><span class="tag">Requirement 02</span><h3>页面可见</h3><p>PG 的可见性信息不在普通索引项里。若堆页不是 all-visible，仍需访问堆确认。</p></article>
+        <article class="note orange"><span class="tag">Requirement 03</span><h3>收益大于宽度</h3><p>读少量返回列、更新相对少的表更可能获益；宽而频繁更新的覆盖索引可能得不偿失。</p></article>
+      </div>
+
+      <div class="plan-box reveal">
+        <div class="plan-toolbar"><span>INDEX ONLY SCAN · WHAT TO WATCH</span><span>Heap Fetches 才是关键证词</span></div>
+        <div class="plan-lines">
+          <span class="plan-line" data-kind="good">Index Only Scan using idx_orders_feed_cover on orders</span>
+          <span class="plan-line">  Index Cond: ((tenant_id = 42) AND (status = 'PAID'))</span>
+          <span class="plan-line" data-kind="estimate">  Heap Fetches: 12,846</span>
+          <span class="plan-line">  Buffers: shared hit=9,021 read=1,204</span>
+        </div>
+      </div>
+      <p class="reveal">节点名叫 Index Only，不保证本次真的“零堆访问”。写入频繁、autovacuum 尚未推进可见性映射时，<code>Heap Fetches</code> 可能很高。</p>
+
+      <div class="db-callout mysql reveal">
+        <h4>MySQL 没有与 PG <code>INCLUDE</code> 完全相同的语法</h4>
+        <p>通常把返回列放在复合索引尾部来形成覆盖。因为 InnoDB 二级索引还会携带主键，<code>SELECT</code> 主键可能已经被覆盖。请在 <code>EXPLAIN</code> 的 <code>Extra</code> 中观察 <code>Using index</code>，同时核算索引宽度。</p>
+      </div>
+
+      <h3 class="reveal">MySQL <code>EXPLAIN</code> 三个容易看反的信号</h3>
+      <div class="table-wrap reveal">
+        <table>
+          <thead><tr><th>信号</th><th>真正含义</th><th>还要追问</th></tr></thead>
+          <tbody>
+            <tr><td><code>Extra: Using index</code></td><td>本次读取可由索引覆盖，不需要为了返回列再访问聚簇记录。</td><td>扫描了多少索引项？覆盖不等于扫描范围小。</td></tr>
+            <tr><td><code>Extra: Using index condition</code></td><td>启用了 Index Condition Pushdown，在索引层先过滤；仍可能访问聚簇记录。</td><td>过滤后回主键多少次？不要把 ICP 当成 covering。</td></tr>
+            <tr><td><code>type: index</code></td><td>按索引顺序做全索引扫描，不是“精准使用索引”的等级保证。</td><td><code>rows</code> 是否很大、能否建立更窄的范围边界？</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="chapter page" id="toolbox" data-nav="toolbox">
+      <div class="chapter-heading reveal">
+        <div class="chapter-no">06</div>
+        <div>
+          <p class="chapter-kicker">Choose the right instrument</p>
+          <h2>PostgreSQL 索引工具箱：B-tree 不是万能钥匙</h2>
+          <p class="chapter-intro">本节先看 PostgreSQL 的 GIN、GiST、SP-GiST、BRIN 与 Hash；随后再单独对照 MySQL。选结构前，先描述搜索语义：等值、范围、包含、相似、空间关系，还是物理顺序上的大范围过滤。</p>
+        </div>
+      </div>
+
+      <div class="tool-grid reveal">
+        <article class="tool-card" data-code="DEFAULT"><span class="tag">Ordered</span><h3>B-tree</h3><p><span class="best">适合：</span>等值、范围、前缀有序访问、排序、唯一约束。</p><p><span class="cost">代价：</span>键宽、页分裂、写维护；不擅长包含式复杂值。</p></article>
+        <article class="tool-card" data-code="INVERTED"><span class="tag">Postings</span><h3>GIN</h3><p><span class="best">适合：</span>数组、JSONB、全文、<code>pg_trgm</code> 多词元查询。</p><p><span class="cost">代价：</span>写入与维护较重，操作符类决定能回答什么。</p></article>
+        <article class="tool-card" data-code="EXTENSIBLE"><span class="tag">Geometry</span><h3>GiST</h3><p><span class="best">适合：</span>范围重叠、空间、近邻、可扩展搜索策略。</p><p><span class="cost">代价：</span>通常可能有损并需 recheck；效果依操作符类。</p></article>
+        <article class="tool-card" data-code="PARTITIONED"><span class="tag">Search tree</span><h3>SP-GiST</h3><p><span class="best">适合：</span>天然可分区的空间，如 trie、四叉树、基数树。</p><p><span class="cost">代价：</span>场景专用，不是普通 B-tree 的替代品。</p></article>
+        <article class="tool-card" data-code="BLOCK RANGE"><span class="tag">Tiny summary</span><h3>BRIN</h3><p><span class="best">适合：</span>超大追加表，时间与物理位置高度相关。</p><p><span class="cost">代价：</span>页范围摘要是有损的，需要 recheck；相关性差会读很多候选块。</p></article>
+        <article class="tool-card" data-code="EQUALITY"><span class="tag">Exact only</span><h3>Hash</h3><p><span class="best">适合：</span>只做等值比较的场景。</p><p><span class="cost">代价：</span>不支持范围和排序；多数业务先验证 B-tree 是否已经足够。</p></article>
+      </div>
+
+      <div class="lab reveal" id="type-lab">
+        <div class="lab-header">
+          <div><p class="chapter-kicker">Quick selector</p><h3>索引类型问诊台</h3></div>
+          <span class="lab-index">TOOL / FIRST GUESS</span>
+        </div>
+        <p>给出数据形态和搜索语义，得到“第一个值得验证的候选”。这不是自动建索引建议，最终仍需结合操作符类和执行计划。</p>
+        <div class="type-questions">
+          <div class="type-question"><label for="type-data">数据形态</label><select id="type-data"><option value="scalar">标量：数字/时间/文本键</option><option value="json">JSONB / 数组 / 全文</option><option value="spatial">空间 / 范围 / 网络</option><option value="append">超大追加型时间表</option></select></div>
+          <div class="type-question"><label for="type-op">主要查询</label><select id="type-op"><option value="eq-range">等值、范围或排序</option><option value="contains">包含、词元或相似匹配</option><option value="overlap">重叠、距离或近邻</option><option value="broad-time">大时间范围过滤</option></select></div>
+        </div>
+        <div class="type-answer" id="type-answer" role="status" aria-live="polite" aria-atomic="true"><b>B-tree</b><span>从默认有序索引开始验证；如果查询语义不是比较运算，再换工具。</span></div>
+      </div>
+
+      <h3 class="reveal">三种值得掌握的“索引形态”</h3>
+      <div class="columns-3 reveal">
+        <article class="note green">
+          <span class="tag">Partial</span><h3>部分索引</h3>
+          <p>只索引稳定且高价值的子集，例如未删除、待处理订单。索引更小，但查询条件必须能在规划时推出索引谓词。</p>
+        </article>
+        <article class="note blue">
+          <span class="tag">Expression</span><h3>表达式索引</h3>
+          <p>索引标准化后的值，例如 <code>lower(metadata -&gt;&gt; 'customer_email')</code>。查询要使用等价表达式；写入时要计算并维护结果。</p>
+        </article>
+        <article class="note orange">
+          <span class="tag">Covering</span><h3>覆盖索引</h3>
+          <p>把高频查询的返回列带进索引，减少表访问。它优化的是读取路径，也会扩大索引和写入成本。</p>
+        </article>
+      </div>
+
+      <div class="code-wrap reveal">
+        <pre><code><span class="sql-com">-- 部分索引：只维护未删除的高频订单</span>
+<span class="sql-key">CREATE INDEX</span> idx_orders_open_feed
+<span class="sql-key">ON</span> orders (tenant_id, created_at <span class="sql-key">DESC</span>, id <span class="sql-key">DESC</span>)
+<span class="sql-key">WHERE</span> deleted_at <span class="sql-key">IS NULL</span> <span class="sql-key">AND</span> status <span class="sql-key">IN</span> (<span class="sql-lit">'NEW'</span>, <span class="sql-lit">'PAID'</span>);
+
+<span class="sql-com">-- 表达式索引：大小写无关邮箱查找</span>
+<span class="sql-key">CREATE INDEX</span> idx_orders_email_lower
+<span class="sql-key">ON</span> orders (lower(metadata -&gt;&gt; <span class="sql-lit">'customer_email'</span>));
+
+<span class="sql-com">-- JSONB：更紧凑的 jsonb_path_ops 支持范围较窄，先核对操作符</span>
+<span class="sql-key">CREATE INDEX</span> idx_orders_metadata_gin
+<span class="sql-key">ON</span> orders <span class="sql-key">USING</span> gin (metadata jsonb_path_ops);
+
+<span class="sql-com">-- 模糊包含搜索：需要 pg_trgm 扩展</span>
+<span class="sql-key">CREATE EXTENSION IF NOT EXISTS</span> pg_trgm;
+<span class="sql-key">CREATE INDEX</span> idx_orders_email_trgm
+<span class="sql-key">ON</span> orders <span class="sql-key">USING</span> gin ((metadata -&gt;&gt; <span class="sql-lit">'customer_email'</span>) gin_trgm_ops);</code></pre>
+      </div>
+
+      <details class="deep-dive reveal">
+        <summary>展开：为什么部分索引与参数化查询容易错过彼此？</summary>
+        <div><p>PG 必须在规划阶段证明查询的 <code>WHERE</code> 条件蕴含部分索引谓词。它不是通用定理证明器，通常要求表达式直接匹配或能做简单不等式推导。诸如 <code>x &lt; $1</code> 的参数化条件无法对所有参数值证明蕴含 <code>x &lt; 100</code>，因此该部分索引可能无法使用。</p></div>
+      </details>
+      <details class="deep-dive reveal">
+        <summary>展开：GIN 的 <code>jsonb_ops</code> 与 <code>jsonb_path_ops</code></summary>
+        <div><p>默认 <code>jsonb_ops</code> 支持更广的 JSONB 操作符；<code>jsonb_path_ops</code> 通常更小、对支持的包含/jsonpath 查询更专注，但不支持所有默认操作。不要把“更小”误译成“所有 JSON 查询都更快”。</p></div>
+      </details>
+
+      <h3 class="reveal">PG 与 MySQL 的索引能力对照</h3>
+      <div class="table-wrap reveal">
+        <table>
+          <thead><tr><th>需求</th><th>PostgreSQL 14+</th><th>MySQL 8.x / InnoDB</th></tr></thead>
+          <tbody>
+            <tr><td>通用等值/范围/排序</td><td>B-tree</td><td>B-tree</td></tr>
+            <tr><td>覆盖返回列</td><td><code>INCLUDE</code> 或键列</td><td>复合索引包含所需列；二级项自带主键</td></tr>
+            <tr><td>只索引部分行</td><td>部分索引</td><td>无直接等价语法，常借助生成列等重新建模</td></tr>
+            <tr><td>表达式</td><td>表达式索引</td><td>函数索引/生成列能力，按具体 8.x 版本核对</td></tr>
+            <tr><td>JSON/数组包含</td><td>GIN 操作符类</td><td>生成列、多值索引等，语义和限制不同</td></tr>
+            <tr><td>全文</td><td>GIN/GiST + tsvector，或 trigram</td><td>FULLTEXT（倒排结构）</td></tr>
+            <tr><td>空间</td><td>GiST/SP-GiST + PostGIS 等</td><td>SPATIAL，InnoDB 使用 R-tree</td></tr>
+            <tr><td>超大有序追加表</td><td>BRIN</td><td>无同构内建方案，通常依靠 B-tree、分区等</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="chapter page" id="big-data" data-nav="big-data">
+      <div class="chapter-heading reveal">
+        <div class="chapter-no">07</div>
+        <div>
+          <p class="chapter-kicker">Scale changes the bill</p>
+          <h2>亿级数据：树未必很高，账单一定更厚</h2>
+          <p class="chapter-intro">B-tree 高扇出让树高增长缓慢，但索引体积、缓存工作集、写放大、维护窗口和扫描范围都会随数据增长。大数据优化首先是减少访问范围。</p>
+        </div>
+      </div>
+
+      <div class="columns-3 reveal">
+        <article class="note green"><span class="tag">Reduce</span><h3>先裁剪</h3><p>用租户、时间窗、生命周期或分区裁剪，把“不该参与本次查询”的数据排除在访问路径之外。</p></article>
+        <article class="note blue"><span class="tag">Locate</span><h3>再定位</h3><p>在剩余范围内使用合适索引，处理等值、范围、排序、包含等具体语义。</p></article>
+        <article class="note orange"><span class="tag">Sustain</span><h3>最后算维护</h3><p>核算写入、WAL、复制、vacuum、备份与并发建索引；能跑一次不等于能长期稳定运行。</p></article>
+      </div>
+
+      <h3 class="reveal">BRIN：用极小摘要换取“先排除大段”</h3>
+      <p class="reveal">BRIN 为连续的堆块范围保存摘要，而不是给每一行保存精确指针。如果 <code>created_at</code> 与物理写入顺序高度相关，它能快速排除大量不相交的块范围；命中的范围仍要回表 recheck。</p>
+      <div class="code-wrap reveal">
+        <pre><code><span class="sql-key">CREATE INDEX</span> idx_orders_created_brin
+<span class="sql-key">ON</span> orders <span class="sql-key">USING</span> brin (created_at)
+<span class="sql-key">WITH</span> (pages_per_range = <span class="sql-lit">64</span>);</code></pre>
+      </div>
+      <div class="columns-2 reveal">
+        <article class="note green"><h3>适合</h3><p>追加式事件、日志、订单流水；查询按时间扫较宽范围；物理相关性高；希望索引非常小、写维护低。</p></article>
+        <article class="note orange"><h3>不适合</h3><p>随机更新使时间与物理位置混乱；要求单行精确点查；过滤后仍命中大部分块范围。</p></article>
+      </div>
+
+      <h3 class="reveal">分区：管理和裁剪，不是“大号索引”</h3>
+      <p class="reveal">按月分区能让时间条件触发 partition pruning，也方便归档或删除旧数据；但每个被访问的分区内部仍可能需要索引。过多小分区会增加规划、元数据与运维负担。</p>
+      <div class="table-wrap reveal">
+        <table>
+          <thead><tr><th>策略</th><th>最适合解决</th><th>主要风险</th><th>验证信号</th></tr></thead>
+          <tbody>
+            <tr><td>时间分区</td><td>保留策略、时间裁剪、冷热分层</td><td>跨期查询触碰多分区</td><td>计划中实际扫描的分区数</td></tr>
+            <tr><td>租户分区</td><td>极少数超大租户隔离</td><td>租户数量高、分布变化</td><td>热点和倾斜是否可控</td></tr>
+            <tr><td>BRIN</td><td>相关性高的超大追加表</td><td>相关性差导致大量 recheck</td><td>索引大小、候选块、相关性</td></tr>
+            <tr><td>B-tree</td><td>精确定位和小范围有序读取</td><td>大工作集挤出缓存、写维护</td><td>扫描条目、读页、索引大小</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 class="reveal">每多一棵索引，每次写入多一份维护</h3>
+      <div class="columns-2 reveal">
+        <article>
+          <p>索引会增加插入与更新的 CPU、缓存、WAL、复制流量和磁盘占用。更新被索引列还可能减少 PostgreSQL 使用 HOT 更新的机会。</p>
+          <p>删除并不会立刻把所有空间还给操作系统；MVCC 清理、vacuum 和索引膨胀要分别理解。普通 <code>VACUUM</code> 主要让空间可复用，不等于缩小文件。</p>
+        </article>
+        <article class="note orange">
+          <h3>删除索引前先审计</h3>
+          <p><code>idx_scan = 0</code> 只是线索：统计可能刚重置，索引可能支撑唯一约束，或只在低频但关键的月末任务中使用。结合完整观察周期、约束、查询日志与依赖再决定。</p>
+        </article>
+      </div>
+
+      <div class="code-wrap reveal">
+        <pre><code><span class="sql-com">-- 使用情况：结合统计重置时间和业务周期解读</span>
+<span class="sql-key">SELECT</span> schemaname, relname, indexrelname, idx_scan,
+       pg_size_pretty(pg_relation_size(indexrelid)) <span class="sql-key">AS</span> index_size
+<span class="sql-key">FROM</span> pg_stat_user_indexes
+<span class="sql-key">WHERE</span> relname = <span class="sql-lit">'orders'</span>
+<span class="sql-key">ORDER BY</span> pg_relation_size(indexrelid) <span class="sql-key">DESC</span>;</code></pre>
+      </div>
+
+      <div class="db-callout pg reveal">
+        <h4><code>CREATE INDEX CONCURRENTLY</code> 不是“无锁且免费”</h4>
+        <p>它允许普通写入继续进行，但需要多阶段扫描与等待，会消耗明显 I/O 和 CPU，且不能放在事务块中。失败可能留下 invalid index，需要检查并处理；发布前要准备资源评估、监控和回滚。</p>
+      </div>
+      <div class="rule caution reveal"><strong>大数据第一原则：</strong>先让绝大多数数据不参与，再让剩下的数据找得快；不要指望单个巨型索引替你解决生命周期和访问边界。</div>
+    </section>
+
+    <section class="chapter page" id="api-design" data-nav="api-design">
+      <div class="chapter-heading reveal">
+        <div class="chapter-no">08</div>
+        <div>
+          <p class="chapter-kicker">The frontend is in the query plan</p>
+          <h2>接口设计：前端也会改变索引命运</h2>
+          <p class="chapter-intro">数据库只看到最终查询，但查询形状常由产品和接口契约决定。任意排序、深页码、无限时间窗与精确总数，都会变成数据库必须完成的工作。</p>
+        </div>
+      </div>
+
+      <div class="table-wrap reveal">
+        <table class="api-table">
+          <thead><tr><th>接口选择</th><th>数据库后果</th><th>推荐契约</th></tr></thead>
+          <tbody>
+            <tr><td>任意字段都能排序</td><td>难以准备有限、可控的索引顺序</td><td>白名单开放 2–3 个真实有价值的排序形状</td></tr>
+            <tr><td>跳到第十万页</td><td><code>OFFSET</code> 前的数据仍要定位并丢弃</td><td>用不透明 cursor 和 <code>hasMore</code></td></tr>
+            <tr><td>所有可选条件塞进一条万能 SQL</td><td>参数敏感，估算与计划可能不稳定</td><td>后端维护少量高频、参数化查询模板</td></tr>
+            <tr><td><code>%任意词%</code></td><td>普通 B-tree 通常无法直接定位</td><td>区分前缀、包含、全文三种搜索语义</td></tr>
+            <tr><td>每页都要精确总数</td><td>取 50 行之外，还要完成整个计数范围</td><td>默认返回 <code>hasMore</code>，精确计数按需触发</td></tr>
+            <tr><td><code>SELECT *</code></td><td>读更宽、网络更多，也更难形成合理覆盖</td><td>按页面用途投影字段，详情单独取</td></tr>
+            <tr><td>列表逐行请求详情</td><td>N+1 查询放大连接与随机 I/O</td><td>批量接口、关联预取或服务端聚合</td></tr>
+            <tr><td>日期不限范围</td><td>访问范围随历史持续膨胀</td><td>默认时间窗，并限制最大跨度</td></tr>
+            <tr><td>输入每个按键都立即搜索</td><td>产生瞬时并发与大量废弃查询</td><td>debounce，并把取消信号传递到后端</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 class="reveal">万能 SQL：方便写，难以拥有稳定访问路径</h3>
+      <div class="columns-2 reveal">
+        <article>
+          <span class="tag">One shape for everything</span>
+          <div class="code-wrap"><pre><code><span class="sql-key">WHERE</span> tenant_id = $1
+  <span class="sql-key">AND</span> ($2::<span class="sql-key">text IS NULL OR</span> status = $2)
+  <span class="sql-key">AND</span> created_at &gt;= $3
+<span class="sql-key">ORDER BY</span> created_at <span class="sql-key">DESC</span>, id <span class="sql-key">DESC</span>;</code></pre></div>
+          <p>当状态有时命中 5%、有时不传，真正的最佳访问路径可能不同。prepared statement 的 generic/custom plan 选择还会进一步影响参数敏感查询。</p>
+        </article>
+        <article>
+          <span class="tag">A few explicit templates</span>
+          <div class="code-wrap"><pre><code><span class="sql-com">-- 模板 A：状态必填</span>
+<span class="sql-key">WHERE</span> tenant_id = $1 <span class="sql-key">AND</span> status = $2
+  <span class="sql-key">AND</span> (created_at, id) &lt; ($3, $4)
+
+<span class="sql-com">-- 模板 B：不按状态过滤</span>
+<span class="sql-key">WHERE</span> tenant_id = $1
+  <span class="sql-key">AND</span> (created_at, id) &lt; ($2, $3)</code></pre></div>
+          <p>由后端选择固定参数化模板，不是拼接用户输入。模板数量保持有限，并分别用代表性参数验证索引。</p>
+        </article>
+      </div>
+
+      <div class="lab reveal" id="pagination-lab">
+        <div class="lab-header">
+          <div><p class="chapter-kicker">Interactive experiment</p><h3>实验 4：OFFSET 与 Cursor 翻页竞赛</h3></div>
+          <span class="lab-index">LAB 04 / PAGINATION</span>
+        </div>
+        <p>比较两种分页为了返回当前页需要经过的索引项数量。这里的 cursor 工作量是教学估算，不是实际 I/O 次数。</p>
+        <div class="lab-controls">
+          <div class="field"><label for="page-total">可见结果总数 <output id="page-total-out">10,000,000</output></label><input id="page-total" type="range" min="3" max="8" value="7" step="1"></div>
+          <div class="field"><label for="page-number">目标页码 <output id="page-number-out">1,000</output></label><input id="page-number" type="range" min="1" max="10000" value="1000" step="1"></div>
+          <div class="field"><label for="page-size">每页条数 <output id="page-size-out">50</output></label><input id="page-size" type="range" min="10" max="100" value="50" step="10"></div>
+        </div>
+        <div class="pagination-stage">
+          <article class="lane offset"><h4>OFFSET：从开头数，再丢掉</h4><div class="items" id="offset-items" aria-hidden="true"></div><p class="lane-stat" id="offset-stat">—</p></article>
+          <article class="lane cursor"><h4>Cursor：从复合边界继续</h4><div class="items" id="cursor-items" aria-hidden="true"></div><p class="lane-stat" id="cursor-stat">—</p></article>
+        </div>
+        <p class="lab-note" id="pagination-verdict" role="status" aria-live="polite" aria-atomic="true">正在计算……</p>
+      </div>
+
+      <div class="columns-2 reveal">
+        <article class="note green">
+          <h3>推荐请求</h3>
+          <div class="code-wrap"><pre><code>GET /orders?tenantId=42&amp;status=PAID
+  &amp;limit=50&amp;cursor=eyJ2IjoxLCJ0IjoiLi4uIn0</code></pre></div>
+          <p>游标至少绑定完整排序键 <code>(created_at, id)</code>、方向与过滤条件摘要；对外使用带版本的不透明 token。</p>
+        </article>
+        <article class="note blue">
+          <h3>推荐响应</h3>
+          <div class="code-wrap"><pre><code>{
+  "items": [],
+  "nextCursor": "eyJ2IjoxLCJ0IjoiLi4uIn0",
+  "hasMore": true
+}</code></pre></div>
+          <p>取 <code>limit + 1</code> 行即可判断 <code>hasMore</code>，不必为每页强制执行昂贵的精确总数。</p>
+        </article>
+      </div>
+
+      <div class="rule caution reveal"><strong>Keyset pagination 不是事务快照。</strong>它显著减少深分页工作并降低插入导致的漂移，但删除、更新排序键、跨页权限变化仍会影响后续结果。</div>
+
+      <h3 class="reveal">前后端约定搜索语义，才能选对索引</h3>
+      <div class="table-wrap reveal">
+        <table>
+          <thead><tr><th>产品语言</th><th>SQL 形态</th><th>候选能力</th></tr></thead>
+          <tbody>
+            <tr><td>“以 ORD-2026 开头”</td><td><code>(metadata -&gt;&gt; 'external_ref') LIKE 'ORD-2026%'</code></td><td>表达式 B-tree 是否可用受 collation/operator class 影响，实测确认</td></tr>
+            <tr><td>“任意位置包含 alice”</td><td><code>(metadata -&gt;&gt; 'customer_email') ILIKE '%alice%'</code></td><td>PG <code>pg_trgm</code> + GIN/GiST</td></tr>
+            <tr><td>“正文包含这些词”</td><td>词法化全文查询</td><td>PG tsvector + GIN；MySQL FULLTEXT</td></tr>
+            <tr><td>“JSON 属性包含 priority=true”</td><td><code>metadata @&gt; ...</code></td><td>PG GIN，操作符类与查询操作符匹配</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="chapter page" id="playbook" data-nav="playbook">
+      <div class="chapter-heading reveal">
+        <div class="chapter-no">09</div>
+        <div>
+          <p class="chapter-kicker">Repeatable investigation</p>
+          <h2>慢接口排查手册：从症状到上线</h2>
+          <p class="chapter-intro">把优化变成一条可复用、可审计的证据链。每一步都应该产生一个结论，而不是只产生一条新索引。</p>
+        </div>
+      </div>
+
+      <h3 class="reveal">十步排查路径</h3>
+      <div class="timeline reveal">
+        <article class="timeline-item" data-step="01"><div><h4>定义“慢”</h4><p>记录 p50/p95/p99、吞吐、超时率、业务影响和开始时间；平均值经常藏住尾延迟。</p></div></article>
+        <article class="timeline-item" data-step="02"><div><h4>锁定真实查询形状</h4><p>保存规范化 SQL、绑定值、返回行数、租户/状态/时间分布、并发量，而不只是 ORM 日志里带问号的模板。</p></div></article>
+        <article class="timeline-item" data-step="03"><div><h4>分层定位</h4><p>区分排队、连接池、锁等待、数据库执行、网络传输和应用序列化；别把端到端时间全算给索引。</p></div></article>
+        <article class="timeline-item" data-step="04"><div><h4>取得代表性计划</h4><p>先普通 <code>EXPLAIN</code>，再在安全环境用 <code>EXPLAIN (ANALYZE, BUFFERS)</code>；记录冷热缓存差异。</p></div></article>
+        <article class="timeline-item" data-step="05"><div><h4>找最大工作量</h4><p>比较估算/实际、loops、过滤丢弃、读页、Sort spill、Heap Fetches 和锁等待，不只盯着“最慢节点”标签。</p></div></article>
+        <article class="timeline-item" data-step="06"><div><h4>验证统计与分布</h4><p>数据刚批量变化就 <code>ANALYZE</code>；检查倾斜、多列相关性、父分区统计与参数敏感性。</p></div></article>
+        <article class="timeline-item" data-step="07"><div><h4>提出最小改动</h4><p>候选可能是改查询形状、游标分页、收窄返回列、一个联合/部分索引，或先限制时间范围。</p></div></article>
+        <article class="timeline-item" data-step="08"><div><h4>做前后对照</h4><p>在代表性数据上比较计划、读页、返回行、写入和索引大小；不要只跑一次耗时。</p></div></article>
+        <article class="timeline-item" data-step="09"><div><h4>设计发布</h4><p>评估建索引锁与资源、并发创建限制、复制延迟、迁移工具事务行为、回滚与监控阈值。</p></div></article>
+        <article class="timeline-item" data-step="10"><div><h4>上线后复盘</h4><p>持续观察计划稳定性、p95/p99、buffer/I/O、写入代价和索引使用；确认问题真的消失而非转移。</p></div></article>
+      </div>
+
+      <h3 class="reveal">看到现象后，下一步问什么</h3>
+      <div class="table-wrap reveal">
+        <table>
+          <thead><tr><th>证据</th><th>优先假设</th><th>下一步验证</th></tr></thead>
+          <tbody>
+            <tr><td>估算 100，实际 1,000,000</td><td>统计过期、倾斜、多列相关</td><td><code>ANALYZE</code>、看 <code>pg_stats</code>、代表性参数、扩展统计</td></tr>
+            <tr><td>Index Scan 但 read 很高</td><td>候选多且回表分散、缓存偏冷</td><td>命中比例、heap 相关性、覆盖价值、Bitmap 路径</td></tr>
+            <tr><td>Index Only 但 Heap Fetches 高</td><td>可见性映射不足、表更新频繁</td><td>vacuum 状态、all-visible 比例、索引是否过度覆盖</td></tr>
+            <tr><td>Sort 写临时文件</td><td>输入过多、排序内存不足、索引不供序</td><td>先减行；核对联合顺序；再谨慎评估 <code>work_mem</code></td></tr>
+            <tr><td>Nested Loop 的内层 loops 巨大</td><td>外层行估错、连接索引缺失</td><td>乘算总工作量，核对 join 键统计和访问路径</td></tr>
+            <tr><td>数据库很快但接口仍慢</td><td>N+1、网络、序列化、锁或排队</td><td>端到端 trace，拆分各阶段时间</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="columns-3 reveal">
+        <article class="note orange"><h3>不要先加 Hint</h3><p>Hint 可能暂时掩盖误估，却把数据增长后的选择空间锁死。先理解为什么选择当前计划。</p></article>
+        <article class="note orange"><h3>不要只看一次</h3><p>首次运行与再次运行的缓存状态不同；参数和租户分布也不同。记录一组代表性样本。</p></article>
+        <article class="note orange"><h3>不要承诺倍数</h3><p>“快 100 倍”只属于那次实验。对外承诺 SLO 和容量边界，而不是某台机器的一次比值。</p></article>
+      </div>
+
+      <div class="rule reveal"><strong>优化完成的定义：</strong>真实请求的尾延迟与资源消耗达到目标，同时写入、空间、发布风险和长期维护成本仍可接受。</div>
+    </section>
+
+    <section class="chapter page" id="labs" data-nav="labs">
+      <div class="chapter-heading reveal">
+        <div class="chapter-no">10</div>
+        <div>
+          <p class="chapter-kicker">Reproduce, don't memorize</p>
+          <h2>动手实验：让计划在自己电脑上变化</h2>
+          <p class="chapter-intro">两份脚本都使用独立的 <code>db_index_lab</code> 命名空间，默认生成 100 万条确定性订单数据。请在本地或一次性数据库中运行，不要指向生产实例。</p>
+        </div>
+      </div>
+
+      <div class="columns-2 reveal">
+        <article class="case-file">
+          <span class="tag">Primary lab</span>
+          <h3>PostgreSQL 14+</h3>
+          <p>覆盖无索引基线、单列/联合/覆盖/部分/表达式、JSONB GIN 和时序 BRIN，并展示索引尺寸。</p>
+          <div class="code-wrap"><pre><code>psql -d your_database -f labs/postgresql.sql
+
+<span class="sql-com"># 缩小到 25 万行快速体验</span>
+psql -d your_database -v order_count=250000 -f labs/postgresql.sql</code></pre></div>
+          <a class="action" href="labs/postgresql.sql" download>下载 postgresql.sql</a>
+        </article>
+        <article class="case-file">
+          <span class="tag">Comparison lab</span>
+          <h3>MySQL 8.x / InnoDB</h3>
+          <p>聚焦聚簇主键、二级索引回主键、联合索引与覆盖索引。<code>EXPLAIN ANALYZE</code> 需要 MySQL 8.0.18+。</p>
+          <div class="code-wrap"><pre><code>mysql --table --execute="SOURCE labs/mysql.sql"
+
+<span class="sql-com"># 旧版本可保留 EXPLAIN，注释 ANALYZE</span></code></pre></div>
+          <a class="action" href="labs/mysql.sql" download>下载 mysql.sql</a>
+        </article>
+      </div>
+
+      <h3 class="reveal">推荐实验路线</h3>
+      <div class="timeline reveal">
+        <article class="timeline-item" data-step="01"><div><h4>建立基线</h4><p>先看无合适索引的订单列表计划，记下访问路径、实际行、过滤丢弃、buffers 与排序。</p></div></article>
+        <article class="timeline-item" data-step="02"><div><h4>只加 tenant 单列索引</h4><p>观察它能过滤什么、还剩多少无用工作、是否仍需排序。</p></div></article>
+        <article class="timeline-item" data-step="03"><div><h4>换成联合 B-tree</h4><p>让等值条件、时间范围和稳定排序对齐，观察能否快速停止在前 50 行。</p></div></article>
+        <article class="timeline-item" data-step="04"><div><h4>加入覆盖列</h4><p>PG 观察 <code>Index Only Scan</code> 与 <code>Heap Fetches</code>；MySQL 观察 <code>Using index</code>，同时比较索引大小。</p></div></article>
+        <article class="timeline-item" data-step="05"><div><h4>部分与表达式索引</h4><p>比较待处理小集合和 <code>lower(metadata -&gt;&gt; 'customer_email')</code> 在建索引前后的计划。</p></div></article>
+        <article class="timeline-item" data-step="06"><div><h4>GIN 与 BRIN</h4><p>用 JSONB 包含和窄时间窗，分别观察倒排候选与页范围摘要的访问路径。</p></div></article>
+        <article class="timeline-item" data-step="07"><div><h4>重复一次</h4><p>比较首次和再次运行的 buffer 变化；不要把缓存收益误认为索引结构收益。</p></div></article>
+        <article class="timeline-item" data-step="08"><div><h4>写下自己的结论</h4><p>记录计划形状、读取页、索引尺寸和环境，而不是只记“快了多少倍”。</p></div></article>
+      </div>
+
+      <div class="columns-2 reveal">
+        <article class="note orange">
+          <h3>脚本会改什么？</h3>
+          <p>PG 脚本启动时删除并重建专用 schema <code>db_index_lab</code>；MySQL 脚本在专用 database 中重建实验表。务必使用本地/一次性实例，并先阅读文件顶部说明。</p>
+        </article>
+        <article class="note green">
+          <h3>为什么不用固定耗时？</h3>
+          <p>硬件、缓存、配置和负载让耗时不可移植。先比较计划节点、处理行数和 buffer 工作量，再把本机时间作为现场证据。</p>
+        </article>
+      </div>
+
+      <div class="case-file reveal">
+        <h3>实验记录模板</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>阶段</th><th>访问路径</th><th>估算 / 实际行</th><th>Buffers</th><th>Sort / Heap Fetches</th><th>索引大小</th></tr></thead>
+            <tbody>
+              <tr><td>基线</td><td>填写</td><td>填写</td><td>填写</td><td>填写</td><td>—</td></tr>
+              <tr><td>单列</td><td>填写</td><td>填写</td><td>填写</td><td>填写</td><td>填写</td></tr>
+              <tr><td>联合</td><td>填写</td><td>填写</td><td>填写</td><td>填写</td><td>填写</td></tr>
+              <tr><td>覆盖</td><td>填写</td><td>填写</td><td>填写</td><td>填写</td><td>填写</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="chapter page" id="quiz" data-nav="quiz">
+      <div class="chapter-heading reveal">
+        <div class="chapter-no">11</div>
+        <div>
+          <p class="chapter-kicker">Cross-examination</p>
+          <h2>索引迷思小测：现在开始翻供</h2>
+          <p class="chapter-intro">每题先判断，再看证词。它们故意长得像日常 code review 里最容易脱口而出的句子。</p>
+        </div>
+      </div>
+
+      <div class="quiz-grid" id="quiz-grid">
+        <article class="quiz-card" data-answer="false" data-rationale="优化器会比较路径成本；命中很多行时 Seq Scan 可能更便宜。"><span class="tag">Statement 01</span><p>建了索引，优化器就应该使用。</p><div class="quiz-actions"><button type="button" data-choice="true">对</button><button type="button" data-choice="false">错</button></div><div class="quiz-answer" data-print="答案：错。优化器比较候选路径成本。" aria-live="polite"></div></article>
+        <article class="quiz-card" data-answer="false" data-rationale="顺序扫描可能是读取大比例数据或小表时的最优路径。"><span class="tag">Statement 02</span><p>执行计划出现 Seq Scan 就是性能问题。</p><div class="quiz-actions"><button type="button" data-choice="true">对</button><button type="button" data-choice="false">错</button></div><div class="quiz-answer" data-print="答案：错。Seq Scan 可能是正确计划。" aria-live="polite"></div></article>
+        <article class="quiz-card" data-answer="false" data-rationale="联合索引、部分索引、数据倾斜和真实谓词都可能让低基数字段有价值。"><span class="tag">Statement 03</span><p>低基数字段永远不值得索引。</p><div class="quiz-actions"><button type="button" data-choice="true">对</button><button type="button" data-choice="false">错</button></div><div class="quiz-answer" data-print="答案：错。要看查询形状与分布。" aria-live="polite"></div></article>
+        <article class="quiz-card" data-answer="false" data-rationale="范围列右侧的列仍可能在索引层过滤，只是通常不再缩小连续扫描区间。"><span class="tag">Statement 04</span><p>联合索引中，范围条件后面的列完全失效。</p><div class="quiz-actions"><button type="button" data-choice="true">对</button><button type="button" data-choice="false">错</button></div><div class="quiz-answer" data-print="答案：错。可能仍参与索引层过滤。" aria-live="polite"></div></article>
+        <article class="quiz-card" data-answer="false" data-rationale="等值列顺序还要考虑查询复用、排序和其他查询形状，不能只按 distinct 数排序。"><span class="tag">Statement 05</span><p>多个等值列必须按“过滤性最强”排在最前。</p><div class="quiz-actions"><button type="button" data-choice="true">对</button><button type="button" data-choice="false">错</button></div><div class="quiz-answer" data-print="答案：错。它只是被误用的启发式。" aria-live="polite"></div></article>
+        <article class="quiz-card" data-answer="false" data-rationale="PG 还要依赖 visibility map；非 all-visible 页仍可能产生 Heap Fetches。"><span class="tag">Statement 06</span><p>覆盖了所有列，PG 就一定不会访问堆。</p><div class="quiz-actions"><button type="button" data-choice="true">对</button><button type="button" data-choice="false">错</button></div><div class="quiz-answer" data-print="答案：错。还受 MVCC 可见性影响。" aria-live="polite"></div></article>
+        <article class="quiz-card" data-answer="false" data-rationale="SELECT * 会扩大读取与网络，也让窄覆盖索引失去机会。"><span class="tag">Statement 07</span><p><code>SELECT *</code> 只影响网络，不影响索引方案。</p><div class="quiz-actions"><button type="button" data-choice="true">对</button><button type="button" data-choice="false">错</button></div><div class="quiz-answer" data-print="答案：错。返回列会改变访问成本。" aria-live="polite"></div></article>
+        <article class="quiz-card" data-answer="false" data-rationale="精确大范围计数确实要完成相应工作，但小表、窄范围、统计近似或索引路径都可能改变成本。"><span class="tag">Statement 08</span><p><code>COUNT(*)</code> 一定慢。</p><div class="quiz-actions"><button type="button" data-choice="true">对</button><button type="button" data-choice="false">错</button></div><div class="quiz-answer" data-print="答案：错。范围和精确性决定工作量。" aria-live="polite"></div></article>
+        <article class="quiz-card" data-answer="false" data-rationale="分区负责管理和裁剪；每个被访问分区内部通常仍需要合适索引。"><span class="tag">Statement 09</span><p>分区表可以代替索引。</p><div class="quiz-actions"><button type="button" data-choice="true">对</button><button type="button" data-choice="false">错</button></div><div class="quiz-answer" data-print="答案：错。两者解决不同层次的问题。" aria-live="polite"></div></article>
+        <article class="quiz-card" data-answer="false" data-rationale="ANALYZE 会实际运行语句；对写语句可能产生副作用、锁和 I/O。"><span class="tag">Statement 10</span><p><code>EXPLAIN ANALYZE</code> 只是分析，不会执行语句。</p><div class="quiz-actions"><button type="button" data-choice="true">对</button><button type="button" data-choice="false">错</button></div><div class="quiz-answer" data-print="答案：错。它会真实执行。" aria-live="polite"></div></article>
+        <article class="quiz-card" data-answer="false" data-rationale="PG 是索引 TID 回访堆 tuple；InnoDB 是二级键携带主键，再查聚簇记录。"><span class="tag">Bonus</span><p>PostgreSQL 和 InnoDB 的“回表”是同一物理流程。</p><div class="quiz-actions"><button type="button" data-choice="true">对</button><button type="button" data-choice="false">错</button></div><div class="quiz-answer" data-print="答案：错。两种存储组织不同。" aria-live="polite"></div></article>
+        <div class="quiz-score" aria-live="polite"><span>当前得分</span><p><b id="quiz-score">0</b> / <span id="quiz-total">11</span></p><small>每题只计第一次作答，答错也会显示原因。</small></div>
+      </div>
+    </section>
+
+    <section class="chapter page" id="cheatsheet" data-nav="cheatsheet">
+      <div class="chapter-heading reveal">
+        <div class="chapter-no">12</div>
+        <div>
+          <p class="chapter-kicker">Case closed</p>
+          <h2>一页式速查：下次慢接口就照着问</h2>
+          <p class="chapter-intro">把这一节单独打印出来，贴在工位边。索引优化的价值，不在于记住多少术语，而在于少走几次“先建再说”的弯路。</p>
+        </div>
+      </div>
+
+      <div class="cheat-grid reveal">
+        <article class="cheat-block"><h3>先问什么</h3><ul><li>慢到多少：p50 / p95 / p99？</li><li>哪组参数、哪个租户、什么时间窗？</li><li>返回几行，端到端哪个阶段慢？</li><li>偶发还是稳定，何时开始变化？</li></ul></article>
+        <article class="cheat-block"><h3>计划看什么</h3><ul><li>估算行与实际行是否偏离？</li><li><code>actual rows × loops</code> 有多大？</li><li>Buffers、过滤丢弃、Sort spill？</li><li>Index Only 的 Heap Fetches？</li></ul></article>
+        <article class="cheat-block"><h3>索引怎么想</h3><ul><li>先确定高频查询形状。</li><li>等值边界 → 范围/排序 → 返回列。</li><li>联合顺序是否服务查询变体？</li><li>部分、表达式或专用类型是否更小？</li></ul></article>
+        <article class="cheat-block"><h3>危险信号</h3><ul><li>深 <code>OFFSET</code>、万能 <code>OR</code>。</li><li><code>SELECT *</code>、无限日期、任意排序。</li><li>估算偏差超过一个数量级。</li><li>给每个字段各建一棵索引。</li></ul></article>
+        <article class="cheat-block"><h3>上线前后</h3><ul><li>代表性数据与冷热缓存对照。</li><li>写入、WAL、空间、复制代价。</li><li>并发建索引、锁、失败与回滚。</li><li>上线后观察计划稳定性和尾延迟。</li></ul></article>
+        <article class="cheat-block"><h3>常用 PG 命令</h3><div class="code-wrap"><pre><code><span class="sql-key">EXPLAIN</span> (<span class="sql-key">ANALYZE</span>, <span class="sql-key">BUFFERS</span>) ...;
+<span class="sql-key">ANALYZE</span> orders;
+<span class="sql-key">SELECT</span> * <span class="sql-key">FROM</span> pg_stat_user_indexes
+<span class="sql-key">WHERE</span> relname = <span class="sql-lit">'orders'</span>;</code></pre></div></article>
+      </div>
+
+      <div class="rule reveal"><strong>最终心智模型：</strong>索引不是“让查询变快”的开关，而是把某类读取工作提前组织、持续维护的一份数据结构。</div>
+
+      <h3 class="reveal">官方资料与延伸阅读</h3>
+      <p class="reveal">正文以 PostgreSQL 14+ 为兼容基线，并注明 PG 18 的 skip scan 差异；MySQL 对照以 8.x / InnoDB 为主。版本敏感行为请始终以你的版本文档与实际计划为准。</p>
+      <ul class="source-list reveal">
+        <li><a href="https://www.postgresql.org/docs/14/indexes.html" target="_blank" rel="noreferrer">PostgreSQL 14 · Chapter 11: Indexes</a><span>索引类型、组合、表达式、部分、覆盖与使用检查的总入口。</span></li>
+        <li><a href="https://www.postgresql.org/docs/14/btree-implementation.html" target="_blank" rel="noreferrer">PostgreSQL 14 · B-Tree Implementation</a><span>页结构、扫描与实现背景。</span></li>
+        <li><a href="https://www.postgresql.org/docs/14/indexes-multicolumn.html" target="_blank" rel="noreferrer">PostgreSQL 14 · Multicolumn Indexes</a><span>多列索引边界与列顺序。</span></li>
+        <li><a href="https://www.postgresql.org/docs/14/indexes-index-only-scans.html" target="_blank" rel="noreferrer">PostgreSQL 14 · Index-Only Scans</a><span><code>INCLUDE</code>、覆盖与 visibility map。</span></li>
+        <li><a href="https://www.postgresql.org/docs/14/indexes-partial.html" target="_blank" rel="noreferrer">PostgreSQL 14 · Partial Indexes</a><span>谓词蕴含与参数化限制。</span></li>
+        <li><a href="https://www.postgresql.org/docs/14/using-explain.html" target="_blank" rel="noreferrer">PostgreSQL 14 · Using EXPLAIN</a><span>成本、估算、节点与实际执行的官方教程。</span></li>
+        <li><a href="https://www.postgresql.org/docs/14/planner-stats.html" target="_blank" rel="noreferrer">PostgreSQL 14 · Planner Statistics</a><span>采样统计、扩展统计与估算。</span></li>
+        <li><a href="https://www.postgresql.org/docs/14/brin-intro.html" target="_blank" rel="noreferrer">PostgreSQL 14 · BRIN Introduction</a><span>页范围摘要和物理相关性。</span></li>
+        <li><a href="https://www.postgresql.org/docs/18/release-18.html" target="_blank" rel="noreferrer">PostgreSQL 18 · Release Notes</a><span>多列 B-tree skip scan 的版本边界。</span></li>
+        <li><a href="https://dev.mysql.com/doc/refman/8.0/en/innodb-index-types.html" target="_blank" rel="noreferrer">MySQL 8.0 · InnoDB Index Types</a><span>聚簇索引、二级索引与主键组织。</span></li>
+        <li><a href="https://dev.mysql.com/doc/refman/8.0/en/mysql-indexes.html" target="_blank" rel="noreferrer">MySQL 8.0 · How MySQL Uses Indexes</a><span>复合、覆盖与索引使用原则。</span></li>
+        <li><a href="https://dev.mysql.com/doc/refman/8.0/en/explain.html" target="_blank" rel="noreferrer">MySQL 8.0 · EXPLAIN</a><span><code>EXPLAIN ANALYZE</code> 与 TREE 输出。</span></li>
+        <li><a href="https://dev.mysql.com/doc/refman/8.0/en/index-condition-pushdown-optimization.html" target="_blank" rel="noreferrer">MySQL 8.0 · Index Condition Pushdown</a><span>区分 <code>Using index condition</code> 与覆盖读取。</span></li>
+      </ul>
+    </section>
+
+    <footer class="site-footer page">
+      <strong>CASE CLOSED · 但每条慢 SQL 都要重新取证</strong>
+      <p>本教程中的模型和计划数字用于解释原理，不构成固定性能结论。最后更新：2026-08。</p>
+      <a href="#top" id="back-to-top">返回顶部 ↑</a>
+    </footer>
+  </main>
+  <script>
+    (() => {
+      "use strict";
+
+      const number = new Intl.NumberFormat("zh-CN");
+      const compact = new Intl.NumberFormat("zh-CN", { notation: "compact", maximumFractionDigits: 1 });
+      const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+      const byId = (id) => document.getElementById(id);
+
+      document.querySelectorAll('input[type="range"]').forEach((input) => {
+        input.addEventListener("keydown", (event) => {
+          const step = Number(input.step) || 1;
+          const min = Number(input.min);
+          const max = Number(input.max);
+          const precision = (input.step.split(".")[1] || "").length;
+          const directions = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1, PageDown: -10, PageUp: 10 };
+          let next;
+          if (event.key === "Home") next = min;
+          else if (event.key === "End") next = max;
+          else if (event.key in directions) next = Number(input.value) + step * directions[event.key];
+          else return;
+          event.preventDefault();
+          input.value = String(Number(clamp(next, min, max).toFixed(precision)));
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+      });
+
+      const revealItems = document.querySelectorAll(".reveal");
+      if ("IntersectionObserver" in window) {
+        const revealObserver = new IntersectionObserver((entries, observer) => {
+          entries.forEach((entry) => {
+            if (!entry.isIntersecting) return;
+            entry.target.classList.add("visible");
+            observer.unobserve(entry.target);
+          });
+        }, { rootMargin: "0px 0px -8% 0px", threshold: 0.05 });
+        revealItems.forEach((item) => revealObserver.observe(item));
+      } else {
+        revealItems.forEach((item) => item.classList.add("visible"));
+      }
+
+      const progressBar = byId("scroll-progress-bar");
+      const updateProgress = () => {
+        const scrollable = document.documentElement.scrollHeight - window.innerHeight;
+        const progress = scrollable > 0 ? window.scrollY / scrollable : 0;
+        progressBar.style.width = `${clamp(progress * 100, 0, 100)}%`;
+      };
+      updateProgress();
+      window.addEventListener("scroll", updateProgress, { passive: true });
+      window.addEventListener("resize", updateProgress);
+
+      const railLinks = [...document.querySelectorAll(".reading-rail a")];
+      const navSections = document.querySelectorAll("section[data-nav]");
+      if ("IntersectionObserver" in window) {
+        const navObserver = new IntersectionObserver((entries) => {
+          const visible = entries.filter((entry) => entry.isIntersecting)
+            .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+          if (!visible) return;
+          railLinks.forEach((link) => {
+            const isActive = link.getAttribute("href") === `#${visible.target.dataset.nav}`;
+            link.classList.toggle("active", isActive);
+            if (isActive) link.setAttribute("aria-current", "location");
+            else link.removeAttribute("aria-current");
+          });
+        }, { rootMargin: "-18% 0px -68% 0px", threshold: [0.01, 0.2] });
+        navSections.forEach((section) => navObserver.observe(section));
+      }
+
+      document.querySelectorAll(".mobile-toc a").forEach((link) => {
+        link.addEventListener("click", () => {
+          const target = document.querySelector(link.getAttribute("href"));
+          link.closest("details").removeAttribute("open");
+          const heading = target?.querySelector("h2");
+          if (!heading) return;
+          heading.tabIndex = -1;
+          window.requestAnimationFrame(() => heading.focus({ preventScroll: true }));
+        });
+      });
+
+      document.querySelectorAll("pre, .plan-lines, .table-wrap").forEach((region) => {
+        region.tabIndex = 0;
+        if (region.hasAttribute("aria-label")) return;
+        if (region.matches("pre")) region.setAttribute("aria-label", "代码区域，可横向滚动");
+        else if (region.matches(".plan-lines")) region.setAttribute("aria-label", "执行计划，可横向滚动");
+        else region.setAttribute("aria-label", "数据表，可横向滚动");
+      });
+
+      const copyText = async (text) => {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(text);
+          return;
+        }
+        const area = document.createElement("textarea");
+        area.value = text;
+        area.setAttribute("readonly", "");
+        area.style.position = "fixed";
+        area.style.opacity = "0";
+        document.body.appendChild(area);
+        area.select();
+        const copied = document.execCommand("copy");
+        area.remove();
+        if (!copied) throw new Error("copy command was rejected");
+      };
+
+      document.querySelectorAll(".code-wrap pre").forEach((pre) => {
+        const button = document.createElement("button");
+        const status = document.createElement("span");
+        button.type = "button";
+        button.className = "copy-code";
+        button.textContent = "复制";
+        button.setAttribute("aria-label", "复制代码");
+        status.className = "sr-only";
+        status.setAttribute("role", "status");
+        status.setAttribute("aria-live", "polite");
+        status.setAttribute("aria-atomic", "true");
+        button.addEventListener("click", async () => {
+          try {
+            await copyText(pre.innerText);
+            button.textContent = "已复制";
+            status.textContent = "代码已复制到剪贴板";
+          } catch (error) {
+            button.textContent = "复制失败";
+            status.textContent = "代码复制失败";
+            console.error("Code copy failed:", error);
+          }
+          window.setTimeout(() => {
+            button.textContent = "复制";
+            status.textContent = "";
+          }, 1600);
+        });
+        pre.parentElement.appendChild(button);
+        pre.parentElement.appendChild(status);
+      });
+
+      const scanRows = byId("scan-rows");
+      const scanSelectivity = byId("scan-selectivity");
+      const scanCache = byId("scan-cache");
+      const scanResults = {
+        seq: byId("seq-result"),
+        index: byId("index-result"),
+        bitmap: byId("bitmap-result")
+      };
+      const scanTrack = byId("scan-track");
+      for (let i = 0; i < 24; i += 1) scanTrack.appendChild(document.createElement("i"));
+
+      const updateScanLab = () => {
+        const rows = 10 ** Number(scanRows.value);
+        const hitPercent = 10 ** Number(scanSelectivity.value);
+        const cache = Number(scanCache.value) / 100;
+        const rowsPerPage = 80;
+        const pages = Math.max(1, Math.ceil(rows / rowsPerPage));
+        const matches = Math.max(1, rows * hitPercent / 100);
+        const touchedPages = pages * (1 - Math.exp(-matches / pages));
+        const depth = Math.max(2, Math.ceil(Math.log(rows) / Math.log(200)));
+        const costs = {
+          seq: pages * (1 - cache * 0.35),
+          index: depth + touchedPages * (4 - cache * 2.9) + matches * 0.002,
+          bitmap: depth + touchedPages * (1.25 - cache * 0.45) + matches * 0.007
+        };
+        const winner = Object.entries(costs).sort((a, b) => a[1] - b[1])[0][0];
+        const best = costs[winner];
+        const pathNames = { seq: "Seq Scan", index: "Index Scan", bitmap: "Bitmap Scan" };
+
+        byId("scan-rows-out").textContent = number.format(rows);
+        byId("scan-selectivity-out").textContent = `${hitPercent < 0.01 ? hitPercent.toFixed(3) : hitPercent.toFixed(hitPercent < 1 ? 2 : 1)}%`;
+        byId("scan-cache-out").textContent = `${Math.round(cache * 100)}%`;
+        scanRows.setAttribute("aria-valuetext", `${number.format(rows)} 行`);
+        scanSelectivity.setAttribute("aria-valuetext", `${byId("scan-selectivity-out").textContent} 命中比例`);
+        scanCache.setAttribute("aria-valuetext", `${Math.round(cache * 100)}% 缓存热度`);
+        Object.entries(costs).forEach(([key, value]) => {
+          byId(`${key}-cost`).textContent = `${(value / best).toFixed(1)}×`;
+          scanResults[key].classList.toggle("active", key === winner);
+        });
+
+        const visibleShare = winner === "seq" ? 1 : clamp(touchedPages / pages, 0, 1);
+        [...scanTrack.children].forEach((block, index) => {
+          block.className = "";
+          if (index / scanTrack.children.length < visibleShare) block.classList.add(winner === "index" ? "index-read" : "read");
+        });
+        byId("scan-verdict").textContent = `教学模型选择 ${pathNames[winner]}：约命中 ${compact.format(matches)} 行，随机分布时可能触及 ${Math.round(visibleShare * 100)}% 的表页。命中比例只是入口，行分布和缓存会改变答案。`;
+      };
+      [scanRows, scanSelectivity, scanCache].forEach((input) => input.addEventListener("input", updateScanLab));
+      updateScanLab();
+
+      const treeRows = byId("tree-rows");
+      const treeFanout = byId("tree-fanout");
+      const treeStage = byId("tree-stage");
+      const updateTreeLab = () => {
+        const rows = 10 ** Number(treeRows.value);
+        const fanout = Number(treeFanout.value);
+        const height = Math.max(2, Math.ceil(Math.log(rows) / Math.log(fanout)));
+        byId("tree-rows-out").textContent = number.format(rows);
+        byId("tree-fanout-out").textContent = number.format(fanout);
+        byId("tree-height").textContent = `${height} 层`;
+        treeRows.setAttribute("aria-valuetext", `${number.format(rows)} 个索引项`);
+        treeFanout.setAttribute("aria-valuetext", `平均扇出 ${number.format(fanout)}`);
+        treeStage.replaceChildren();
+        for (let level = 0; level < height; level += 1) {
+          const row = document.createElement("div");
+          row.className = "tree-level";
+          const isLeaf = level === height - 1;
+          const count = level === 0 ? 1 : Math.min(10, 2 ** level);
+          for (let nodeIndex = 0; nodeIndex < count; nodeIndex += 1) {
+            const node = document.createElement("span");
+            node.className = "tree-node";
+            node.textContent = level === 0 ? "ROOT" : isLeaf ? `LEAF ${nodeIndex + 1}` : `L${level} · ${nodeIndex + 1}`;
+            row.appendChild(node);
+          }
+          treeStage.appendChild(row);
+        }
+        treeStage.setAttribute("aria-label", `${number.format(rows)} 个索引项、平均扇出 ${fanout} 时，估算从根到叶共 ${height} 层`);
+      };
+      [treeRows, treeFanout].forEach((input) => input.addEventListener("input", updateTreeLab));
+      updateTreeLab();
+
+      const shapes = {
+        a: { label: "形状 A", equals: ["tenant_id", "status"], range: "created_at", sort: ["created_at", "id"], recommendation: "tenant-status-time-id" },
+        b: { label: "形状 B", equals: ["tenant_id"], range: "created_at", sort: ["created_at", "id"], recommendation: "tenant-time-id" },
+        c: { label: "形状 C", equals: ["tenant_id", "user_id"], range: null, sort: ["created_at", "id"], recommendation: "tenant-user-time" }
+      };
+      const candidates = {
+        "tenant-status-time-id": ["tenant_id", "status", "created_at", "id"],
+        "tenant-time-id": ["tenant_id", "created_at", "id"],
+        "tenant-user-time": ["tenant_id", "user_id", "created_at", "id"],
+        "status-tenant-time": ["status", "tenant_id", "created_at", "id"]
+      };
+      let currentShape = "a";
+      let currentIndex = "tenant-status-time-id";
+
+      const startsWith = (values, prefix) => prefix.every((value, index) => values[index] === value);
+      const updateCompositeLab = () => {
+        const shape = shapes[currentShape];
+        const columns = candidates[currentIndex];
+        let leadingEquals = 0;
+        while (leadingEquals < columns.length && shape.equals.includes(columns[leadingEquals])) leadingEquals += 1;
+        const rangeUsable = Boolean(shape.range && columns[leadingEquals] === shape.range);
+        const suffixStart = rangeUsable ? leadingEquals : leadingEquals;
+        const sortSatisfied = startsWith(columns.slice(suffixStart), shape.sort);
+        const exactOrder = currentIndex === shape.recommendation;
+        const sameQueryPath = leadingEquals === shape.equals.length && rangeUsable && sortSatisfied;
+        const score = sameQueryPath ? 100 : clamp(leadingEquals * 18 + (rangeUsable ? 24 : 0) + (sortSatisfied ? 30 : 0), 0, 96);
+        const container = byId("index-columns");
+        container.replaceChildren();
+
+        columns.forEach((column, index) => {
+          const key = document.createElement("span");
+          key.className = "key";
+          key.dataset.pos = String(index + 1);
+          key.textContent = column;
+          if (index < leadingEquals) key.classList.add("navigate");
+          else if (rangeUsable && index === leadingEquals) key.classList.add("range");
+          else if (shape.equals.includes(column) || column === shape.range) key.classList.add("filter");
+          if (sortSatisfied && shape.sort.includes(column)) key.classList.add("sort");
+          container.appendChild(key);
+        });
+
+        let title = "存在明显缺口";
+        let copy = `领先等值列只连续匹配 ${leadingEquals} 个；后续条件更多是在扫描中筛选。`;
+        if (exactOrder) {
+          title = "与当前查询形状高度对齐";
+          copy = `连续等值边界、${shape.range ? "范围" : "排序"}与稳定排序形成一条访问路径。仍要用真实分布验证收益。`;
+        } else if (sameQueryPath) {
+          title = "当前查询同样对齐";
+          copy = "等值条件都必填时，交换等值列仍可形成连续边界；推荐顺序的差异主要在其他查询形状的复用面。";
+        } else if (score >= 65) {
+          title = "可用，但不是最佳复用";
+          copy = `它能利用 ${leadingEquals} 个领先等值列${rangeUsable ? "和范围边界" : ""}${sortSatisfied ? "，也能提供排序" : "，但仍可能额外排序"}。`;
+        } else if (leadingEquals > 0) {
+          title = "只能解决部分工作";
+          copy = `它能从 ${leadingEquals} 个领先等值列开始，但范围或排序被未约束列打断。`;
+        }
+        byId("index-verdict-title").textContent = `${shape.label}：${title}`;
+        byId("index-verdict-copy").textContent = copy;
+        byId("index-score").textContent = String(score);
+      };
+
+      document.querySelectorAll("#query-shape-options button").forEach((button) => {
+        button.addEventListener("click", () => {
+          currentShape = button.dataset.shape;
+          document.querySelectorAll("#query-shape-options button").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
+          updateCompositeLab();
+        });
+      });
+      document.querySelectorAll("#index-candidate-options button").forEach((button) => {
+        button.addEventListener("click", () => {
+          currentIndex = button.dataset.index;
+          document.querySelectorAll("#index-candidate-options button").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
+          updateCompositeLab();
+        });
+      });
+      updateCompositeLab();
+
+      const typeData = byId("type-data");
+      const typeOp = byId("type-op");
+      const typeAnswers = {
+        btree: ["B-tree", "从有序比较开始：适合等值、范围和排序。再用执行计划确认命中范围。"],
+        gin: ["GIN", "把复合值拆成可检索词元，优先验证 JSONB、数组、全文或 trigram 操作符类。"],
+        gist: ["GiST / SP-GiST", "从操作符类出发验证重叠、距离、近邻或天然空间划分，不要只凭数据类型决定。"],
+        brin: ["BRIN", "先确认逻辑值与物理位置高度相关；它用页范围摘要快速排除，而非精确定位行。"],
+        trigram: ["pg_trgm + GIN/GiST", "标量文本的任意位置包含不是普通 B-tree 的强项；明确相似度和大小写语义后验证 trigram。"]
+      };
+      const updateTypeLab = () => {
+        let key = "btree";
+        if (typeData.value === "append" && typeOp.value === "broad-time") key = "brin";
+        else if (typeData.value === "json" || typeOp.value === "contains") key = typeData.value === "scalar" ? "trigram" : "gin";
+        else if (typeData.value === "spatial" || typeOp.value === "overlap") key = "gist";
+        const [title, copy] = typeAnswers[key];
+        const answer = byId("type-answer");
+        answer.querySelector("b").textContent = title;
+        answer.querySelector("span").textContent = copy;
+      };
+      [typeData, typeOp].forEach((select) => select.addEventListener("change", updateTypeLab));
+      updateTypeLab();
+
+      const pageTotal = byId("page-total");
+      const pageNumber = byId("page-number");
+      const pageSize = byId("page-size");
+      const renderLane = (container, discardCount, returnCount, cursorMode) => {
+        container.replaceChildren();
+        const totalBlocks = 32;
+        const returnedBlocks = clamp(Math.ceil(returnCount / Math.max(1, returnCount) * 5), 3, 6);
+        const discardBlocks = cursorMode ? 2 : clamp(Math.round(discardCount / Math.max(1, discardCount + returnCount) * (totalBlocks - returnedBlocks)), 0, totalBlocks - returnedBlocks);
+        for (let i = 0; i < totalBlocks; i += 1) {
+          const item = document.createElement("i");
+          if (i < discardBlocks) item.className = "discard";
+          else if (i < discardBlocks + returnedBlocks) item.className = "return";
+          container.appendChild(item);
+        }
+      };
+      const updatePaginationLab = () => {
+        const total = 10 ** Number(pageTotal.value);
+        const size = Number(pageSize.value);
+        const maxPage = Math.max(1, Math.floor(total / size));
+        const requestedPage = Number(pageNumber.value);
+        const page = Math.min(requestedPage, maxPage);
+        const discarded = (page - 1) * size;
+        const offsetWork = discarded + size;
+        const cursorWork = Math.ceil(Math.log2(total)) + size;
+        const ratio = offsetWork / cursorWork;
+        byId("page-total-out").textContent = number.format(total);
+        byId("page-number-out").textContent = number.format(page);
+        byId("page-size-out").textContent = number.format(size);
+        pageTotal.setAttribute("aria-valuetext", `${number.format(total)} 条可见结果`);
+        pageNumber.setAttribute("aria-valuetext", `第 ${number.format(page)} 页`);
+        pageSize.setAttribute("aria-valuetext", `每页 ${number.format(size)} 条`);
+        byId("offset-stat").textContent = `经过约 ${number.format(offsetWork)} 个索引项，其中丢弃 ${number.format(discarded)} 个`;
+        byId("cursor-stat").textContent = `教学估算：定位边界 + 读取本页，约 ${number.format(cursorWork)} 个工作单位`;
+        byId("pagination-verdict").textContent = page === 1
+          ? "第一页两者工作量接近；cursor 的优势会随着页码加深出现。"
+          : `在这个教学模型里，OFFSET 约做 ${ratio.toFixed(ratio < 10 ? 1 : 0)}× 工作。真实差异还取决于覆盖、缓存和并发写入。`;
+        renderLane(byId("offset-items"), discarded, size, false);
+        renderLane(byId("cursor-items"), 2, size, true);
+      };
+      [pageTotal, pageNumber, pageSize].forEach((input) => input.addEventListener("input", updatePaginationLab));
+      updatePaginationLab();
+
+      let score = 0;
+      document.querySelectorAll(".quiz-card[data-answer]").forEach((card, index) => {
+        const question = card.querySelector("p");
+        const actions = card.querySelector(".quiz-actions");
+        question.id = `quiz-question-${index + 1}`;
+        actions.setAttribute("role", "group");
+        actions.setAttribute("aria-labelledby", question.id);
+        card.querySelectorAll("button[data-choice]").forEach((button) => {
+          button.addEventListener("click", () => {
+            if (card.dataset.answered === "true") return;
+            card.dataset.answered = "true";
+            const correct = button.dataset.choice === card.dataset.answer;
+            if (correct) score += 1;
+            card.classList.add(correct ? "correct" : "wrong");
+            card.querySelector(".quiz-answer").textContent = `${correct ? "回答正确" : `回答错误，正确答案是${card.dataset.answer === "true" ? "“对”" : "“错”"}`}。${card.dataset.rationale}`;
+            card.querySelectorAll("button").forEach((item) => { item.disabled = true; });
+            byId("quiz-score").textContent = String(score);
+          });
+        });
+      });
+    })();
+  </script>
+</body>
+</html>
