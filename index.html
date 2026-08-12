@@ -418,6 +418,21 @@
     th { color: var(--paper-soft); background: var(--ink); font: 800 12px/1.4 var(--mono); letter-spacing: .04em; }
     td:first-child { font-weight: 700; }
     tbody tr:hover { background: rgba(223,183,59,.08); }
+    .structure-compare { border-top-color: var(--green); }
+    .structure-compare table { min-width: 900px; }
+    .structure-compare caption {
+      padding: 12px 14px;
+      color: var(--ink-soft);
+      background: rgba(216,231,216,.56);
+      border-bottom: 1px solid var(--line);
+      font-size: 13px;
+      text-align: left;
+    }
+    .structure-compare caption span { margin-right: 10px; color: var(--green); font: 800 11px/1.3 var(--mono); letter-spacing: .1em; }
+    .structure-compare tbody th { color: var(--ink); background: transparent; font: 800 14px/1.5 var(--body); letter-spacing: 0; }
+    .structure-compare tbody tr.is-choice { background: rgba(216,231,216,.72); box-shadow: inset 5px 0 0 var(--green); }
+    .structure-compare tbody tr.is-choice th { color: var(--green); }
+    .choice-mark { display: block; width: max-content; margin-top: 7px; padding: 3px 7px; color: var(--paper-soft); background: var(--green); font: 800 10px/1.3 var(--mono); letter-spacing: .08em; }
 
     .index-options { display: flex; flex-wrap: wrap; gap: 9px; margin: 18px 0; }
     .index-option {
@@ -606,7 +621,9 @@
       .plan-lines, .table-wrap { overflow: visible; }
       .plan-line { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
       table { table-layout: fixed; font-size: 8.5pt; }
+      .structure-compare table { min-width: 0; }
       th, td { min-width: 0; padding: 6px 7px; overflow-wrap: anywhere; }
+      .source-list li { padding: 6px 0; }
       a { color: black; text-decoration: none; }
       a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 8pt; overflow-wrap: anywhere; }
       .note, .diagram, .rule, .quiz-card { break-inside: avoid; }
@@ -871,6 +888,54 @@
         <div class="tree-stage" id="tree-stage" role="img" aria-label="B+Tree 层级示意" tabindex="0"></div>
         <p class="lab-note">扇出越高，树越矮；但“树高很低”只说明定位索引项便宜，不代表返回大量行和回表也便宜。</p>
       </div>
+
+      <h3 class="reveal">放到同一张 I/O 账单上：为什么通常选它？</h3>
+      <p class="reveal">B+Tree 不是每个单项都最快，而是把<strong>页友好、稳定树高、有序访问和持续更新</strong>放在一个结构里。数据库按页读写；内部页只承担导航时，同一页能容纳更多分隔键和子页指针，高扇出便把一次定位压缩到少量页访问。所有叶子保持同一深度，树高不会像未平衡二叉搜索树那样因插入顺序退化；叶层有序又让一次定位可以自然接上范围扫描和排序输出。</p>
+      <div class="table-wrap structure-compare reveal" tabindex="0" role="region" aria-label="B+Tree 与其他索引结构对比">
+        <table>
+          <caption><span>DEFAULT DECISION</span>比较的是数据库页上的访问与维护，不是只比较抽象复杂度。</caption>
+          <thead><tr><th scope="col">结构</th><th scope="col">它的强项</th><th scope="col">相对 B+Tree 的取舍</th><th scope="col">更适合何时选择</th></tr></thead>
+          <tbody>
+            <tr class="is-choice">
+              <th scope="row">B+Tree 心智模型<span class="choice-mark">通用默认</span></th>
+              <td>高扇出、始终平衡；叶层有序，兼顾等值、范围、联合键左前缀访问、排序和唯一性。</td>
+              <td>单项能力未必最强；需要额外空间，写入要维护顺序并处理页分裂。</td>
+              <td>标量键主要做比较、范围或 <code>ORDER BY</code>，尤其是常见 OLTP 读写混合负载。</td>
+            </tr>
+            <tr>
+              <th scope="row">平衡二叉搜索树</th>
+              <td>有序查找，内存中的节点旋转与比较直观。</td>
+              <td>每个节点只有两个分支；若按节点直接落盘，树更高，一次查询更容易产生多次随机页访问。</td>
+              <td>内存数据结构；不直接按数据库页组织的场景。</td>
+            </tr>
+            <tr>
+              <th scope="row">教科书 B-tree</th>
+              <td>同样是多路、平衡、面向块存储的有序树。</td>
+              <td>记录指针或数据记录可分布在内部与叶节点；B+Tree 将它们集中在叶层，内部节点保存分隔键与子页指针，范围扫描路径也更统一。</td>
+              <td>与 B+Tree 属于同一家族；真实数据库实现应按引擎术语和页格式理解。</td>
+            </tr>
+            <tr>
+              <th scope="row">Hash</th>
+              <td>只做等值匹配时，定位路径可能更直接。</td>
+              <td>哈希值不保序，不能直接支持范围、前缀有序扫描或 <code>ORDER BY</code>，适用面更窄。</td>
+              <td>查询语义长期稳定为纯等值，并经实际计划证明更合适。PG 可创建 Hash 索引；InnoDB 没有对应的通用持久 Hash 索引。</td>
+            </tr>
+            <tr>
+              <th scope="row">LSM-tree 家族</th>
+              <td>先在内存聚合写入，再顺序落盘并合并有序文件，适合高写入吞吐。</td>
+              <td>用后台 compaction 以及读、写、空间放大换写入能力；它更像存储引擎组织方案，并非 PG / InnoDB 中可直接替换 B-tree 的索引类型。</td>
+              <td>优先写入吞吐，且系统能承担多层查询、后台合并及其延迟波动的存储引擎。</td>
+            </tr>
+            <tr>
+              <th scope="row">GIN / GiST / BRIN 等</th>
+              <td>分别处理包含与全文、空间与近邻、列值和物理页高度相关的超大表粗筛。</td>
+              <td>GIN 倒排项多、写维护较重；GiST 是否需要 recheck 取决于操作符类；BRIN 极小但只保存块范围摘要。</td>
+              <td>查询不是普通标量比较时；具体选择见第 06 章“索引工具箱”。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="rule reveal"><strong>所以选 B+Tree，选的是通用性与可预测性。</strong>它用少量树层定位起点，再高效衔接最常见的等值、范围和有序输出，又能在持续写入下保持平衡；范围很宽时仍会扫描许多叶页和数据页。查询语义明显偏离这些能力时，再换专用结构。</div>
 
       <div class="columns-2 reveal">
         <div class="note green">
@@ -1488,20 +1553,22 @@
         <article class="case-file">
           <span class="tag">Primary lab</span>
           <h3>PostgreSQL 14+</h3>
-          <p>覆盖无索引基线、单列/联合/覆盖/部分/表达式、JSONB GIN 和时序 BRIN，并展示索引尺寸。</p>
-          <div class="code-wrap"><pre><code>psql -d your_database -f labs/postgresql.sql
-
-<span class="sql-com"># 缩小到 25 万行快速体验</span>
-psql -d your_database -v order_count=250000 -f labs/postgresql.sql</code></pre></div>
+          <p>纯 SQL，无 <code>psql</code> 元命令；在支持多语句的 PostgreSQL 控制台选择“执行脚本 / Run All”。需要 schema DDL 权限。</p>
+          <div class="code-wrap"><pre><code><span class="sql-com">-- 文件顶部可改成 25 万行快速体验</span>
+SET db_index_lab.order_count = '250000';
+SET db_index_lab.tenant_count = '100';
+SET db_index_lab.target_tenant = '42';</code></pre></div>
           <a class="action" href="labs/postgresql.sql" download>下载 postgresql.sql</a>
         </article>
         <article class="case-file">
           <span class="tag">Comparison lab</span>
-          <h3>MySQL 8.x / InnoDB</h3>
-          <p>聚焦聚簇主键、二级索引回主键、联合索引与覆盖索引。<code>EXPLAIN ANALYZE</code> 需要 MySQL 8.0.18+。</p>
-          <div class="code-wrap"><pre><code>mysql --table --execute="SOURCE labs/mysql.sql"
+          <h3>MySQL 8.0.18+ / InnoDB</h3>
+          <p>纯 SQL；在支持多语句的 MySQL 控制台选择“执行脚本 / Run All”。需要建库及表、索引 DDL 权限。</p>
+          <div class="code-wrap"><pre><code><span class="sql-com">-- 文件顶部可调整数据量</span>
+SET @order_count = 250000;
+SET @tenant_count = 100;
 
-<span class="sql-com"># 旧版本可保留 EXPLAIN，注释 ANALYZE</span></code></pre></div>
+<span class="sql-com">-- EXPLAIN ANALYZE 需要 MySQL 8.0.18+</span></code></pre></div>
           <a class="action" href="labs/mysql.sql" download>下载 mysql.sql</a>
         </article>
       </div>

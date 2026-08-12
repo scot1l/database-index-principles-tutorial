@@ -1,21 +1,22 @@
--- Database Index Lab - MySQL 8.x / InnoDB
+-- Database Index Lab - MySQL 8.0.18+ / InnoDB
 --
 -- EXPLAIN ANALYZE requires MySQL 8.0.18 or newer. On MySQL 8.0.17 and older,
 -- comment out the EXPLAIN ANALYZE statements and use the preceding EXPLAIN.
 -- MariaDB has different syntax and is not a target of this script.
 --
--- Run in a disposable local MySQL instance:
---   mysql --table --execute="SOURCE labs/mysql.sql"
--- To override defaults in the same client session:
---   mysql --table --execute="SET @order_count=250000; SET @tenant_count=50; SOURCE labs/mysql.sql;"
+-- This is pure MySQL SQL. Open it in MySQL Workbench, DBeaver, DataGrip, or
+-- another SQL console that supports multi-statement scripts, then choose
+-- Execute Script / Run All. No mysql client commands are required.
 --
+-- Edit the two SET values below to change the generated data volume.
 -- Supported order_count range: 1 to 1,000,000 (the row generator has 6 digits).
 -- tenant_count must be a positive integer. Defaults: 1,000,000 orders and 100 tenants.
--- The script recreates only tables in the dedicated db_index_lab database.
+-- The account needs CREATE DATABASE and table/index DDL permissions. The script
+-- recreates only tables in the dedicated db_index_lab database.
 -- Exact plans and timings vary by hardware, cache state, settings, and data.
 
-SET @order_count = COALESCE(@order_count, 1000000);
-SET @tenant_count = COALESCE(@tenant_count, 100);
+SET @order_count = 1000000;
+SET @tenant_count = 100;
 
 CREATE DATABASE IF NOT EXISTS db_index_lab
     CHARACTER SET utf8mb4

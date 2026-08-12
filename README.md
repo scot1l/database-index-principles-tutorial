@@ -20,27 +20,28 @@
 
 ## PostgreSQL 实验
 
-脚本默认生成 100 万条订单数据，需要 `psql`：
+`labs/postgresql.sql` 是纯 SQL，不依赖 `psql` 元命令。用 pgAdmin、DBeaver、DataGrip、`psql` 或其他支持多语句的 PostgreSQL 控制台打开文件，连接到本地或一次性数据库后，选择“执行脚本 / Run All”即可。账号需要当前数据库的 `CREATE` 权限；如果已存在同名实验 schema，还需要是其所有者。
 
-```powershell
-psql -d your_database -f labs/postgresql.sql
+脚本顶部提供 3 个可编辑配置；快速体验时只需把订单数改小：
+
+```sql
+SET db_index_lab.order_count = '250000';
+SET db_index_lab.tenant_count = '100';
+SET db_index_lab.target_tenant = '42';
 ```
 
-快速体验可缩小数据规模：
-
-```powershell
-psql -d your_database -v order_count=250000 -f labs/postgresql.sql
-```
-
-脚本会删除并重建专用 schema `db_index_lab`。请只在本地或一次性数据库中运行，并先阅读脚本顶部说明。
+脚本会删除并重建专用 schema `db_index_lab`。默认保留实验对象，文件末尾提供了可选的 `VACUUM` 和清理语句。
 
 ## MySQL 对照实验
 
-```powershell
-mysql --table --execute="SOURCE labs/mysql.sql"
+`labs/mysql.sql` 同样是纯 SQL，最低版本为 MySQL 8.0.18。可在 MySQL Workbench、DBeaver、DataGrip 或其他支持多语句的 MySQL 控制台中打开，选择“执行脚本 / Run All”。账号需要建库及表、索引 DDL 权限。需要缩小数据量时修改文件顶部配置：
+
+```sql
+SET @order_count = 250000;
+SET @tenant_count = 100;
 ```
 
-`EXPLAIN ANALYZE` 需要 MySQL 8.0.18 或更新版本。脚本会在专用 database `db_index_lab` 中重建实验表，不面向 MariaDB。
+`EXPLAIN ANALYZE` 需要 MySQL 8.0.18 或更新版本。脚本会创建专用 database `db_index_lab` 并重建其中的实验表，因此需要建库权限，不面向 MariaDB。
 
 两份脚本围绕同一套订单字段展开：`id`、`tenant_id`、`user_id`、`status`、`total_cents`、`created_at`、`updated_at`、`deleted_at`、`metadata`。状态值统一为大写的 `NEW/PAID/SHIPPED/CANCELLED/REFUNDED`，便于在教程与实验之间直接对照。
 

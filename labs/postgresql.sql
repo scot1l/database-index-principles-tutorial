@@ -1,37 +1,32 @@
 -- Database Index Lab - PostgreSQL 14+
 --
--- Run with psql (not a generic SQL GUI) because this file uses psql variables:
---   psql -d your_database -f labs/postgresql.sql
---   psql -d your_database -v order_count=250000 -v tenant_count=50 -f labs/postgresql.sql
---   psql -d your_database -v cleanup=true -f labs/postgresql.sql
+-- This is pure PostgreSQL SQL. Open it in pgAdmin, DBeaver, DataGrip, psql, or
+-- another SQL console that supports multi-statement scripts, then choose
+-- Execute Script / Run All. No psql meta-commands or client-side variables are
+-- required.
 --
--- Defaults: 1,000,000 orders, 100 tenants, and cleanup=false.
--- order_count and tenant_count must be positive integers.
--- The script drops and recreates only the dedicated db_index_lab schema.
+-- Edit the three SET values below to change the data volume or inspected tenant.
+-- Defaults: 1,000,000 orders, 100 tenants, and tenant 42.
+-- order_count and tenant_count must be positive integers; target_tenant must be
+-- between 1 and tenant_count.
+-- The account needs CREATE permission on the current database and ownership of
+-- an existing db_index_lab schema. The script drops and recreates only that
+-- dedicated schema; do not reuse this schema name for real data.
 -- Runtime and exact plans depend on hardware, cache state, table size, settings,
 -- and data distribution. Compare plan shape and buffer usage, not wall time alone.
 
-\set ON_ERROR_STOP on
-\pset pager off
-\timing on
+SET db_index_lab.order_count = '1000000';
+SET db_index_lab.tenant_count = '100';
+SET db_index_lab.target_tenant = '42';
 
-\if :{?order_count}
-\else
-  \set order_count 1000000
-\endif
+SELECT format(
+    'Configuration: order_count=%s, tenant_count=%s, target_tenant=%s',
+    current_setting('db_index_lab.order_count'),
+    current_setting('db_index_lab.tenant_count'),
+    current_setting('db_index_lab.target_tenant')
+) AS lab_step;
 
-\if :{?tenant_count}
-\else
-  \set tenant_count 100
-\endif
-
-\if :{?cleanup}
-\else
-  \set cleanup false
-\endif
-
-\echo 'Configuration: order_count=' :order_count ', tenant_count=' :tenant_count
-\echo 'Recreating the dedicated db_index_lab schema...'
+SELECT 'Recreating the dedicated db_index_lab schema...' AS lab_step;
 
 DROP SCHEMA IF EXISTS db_index_lab CASCADE;
 CREATE SCHEMA db_index_lab;
@@ -52,7 +47,7 @@ CREATE TABLE orders (
     metadata       jsonb NOT NULL
 );
 
-\echo 'Loading deterministic, time-correlated order data...'
+SELECT 'Loading deterministic, time-correlated order data...' AS lab_step;
 
 INSERT INTO orders (
     id,
@@ -67,31 +62,31 @@ INSERT INTO orders (
 )
 SELECT
     g AS id,
-    1 + ((g - 1) % :tenant_count::bigint)::integer AS tenant_id,
+    1 + ((g - 1) % current_setting('db_index_lab.tenant_count')::bigint)::integer AS tenant_id,
     1 + ((g * 7919) % 200000) AS user_id,
     CASE
-        WHEN (((g - 1) / :tenant_count::bigint) % 100) < 5 THEN 'NEW'
-        WHEN (((g - 1) / :tenant_count::bigint) % 100) < 75 THEN 'PAID'
-        WHEN (((g - 1) / :tenant_count::bigint) % 100) < 87 THEN 'SHIPPED'
-        WHEN (((g - 1) / :tenant_count::bigint) % 100) < 95 THEN 'CANCELLED'
+        WHEN (((g - 1) / current_setting('db_index_lab.tenant_count')::bigint) % 100) < 5 THEN 'NEW'
+        WHEN (((g - 1) / current_setting('db_index_lab.tenant_count')::bigint) % 100) < 75 THEN 'PAID'
+        WHEN (((g - 1) / current_setting('db_index_lab.tenant_count')::bigint) % 100) < 87 THEN 'SHIPPED'
+        WHEN (((g - 1) / current_setting('db_index_lab.tenant_count')::bigint) % 100) < 95 THEN 'CANCELLED'
         ELSE 'REFUNDED'
     END AS status,
     1000 + (g % 500000) AS total_cents,
     TIMESTAMPTZ '2024-01-01 00:00:00+00'
         + INTERVAL '730 days'
           * ((g - 1)::double precision
-             / GREATEST(:order_count::bigint - 1, 1)::double precision) AS created_at,
+             / GREATEST(current_setting('db_index_lab.order_count')::bigint - 1, 1)::double precision) AS created_at,
     TIMESTAMPTZ '2024-01-01 00:00:00+00'
         + INTERVAL '730 days'
           * ((g - 1)::double precision
-             / GREATEST(:order_count::bigint - 1, 1)::double precision)
+             / GREATEST(current_setting('db_index_lab.order_count')::bigint - 1, 1)::double precision)
         + INTERVAL '1 minute' * (g % 240)::double precision AS updated_at,
     CASE
         WHEN g % 50 = 0 THEN
             TIMESTAMPTZ '2024-01-01 00:00:00+00'
                 + INTERVAL '730 days'
                   * ((g - 1)::double precision
-                     / GREATEST(:order_count::bigint - 1, 1)::double precision)
+                     / GREATEST(current_setting('db_index_lab.order_count')::bigint - 1, 1)::double precision)
                 + INTERVAL '7 days'
         ELSE NULL
     END AS deleted_at,
@@ -103,14 +98,18 @@ SELECT
         'external_ref', format('ORD-%s', lpad(g::text, 12, '0')),
         'note', 'lab-order-' || g || '-' || repeat('x', (g % 40)::integer)
     ) AS metadata
-FROM generate_series(1, :order_count::bigint) AS series(g)
+FROM generate_series(
+    1,
+    current_setting('db_index_lab.order_count')::bigint
+) AS series(g)
 -- Make heap/time correlation explicit so the BRIN experiment is reproducible.
 ORDER BY g;
 
--- VACUUM marks unchanged heap pages all-visible. That matters for a later
--- Index Only Scan: an index containing every selected column is not enough by
--- itself; PostgreSQL still consults the visibility map because of MVCC.
-VACUUM (ANALYZE) orders;
+-- Keep the execute-all script transaction-safe for SQL consoles. VACUUM cannot
+-- run inside a transaction block, so use ANALYZE here. After this script commits,
+-- the optional VACUUM command at the end can mark heap pages all-visible and
+-- reduce Heap Fetches in the covering-index experiment.
+ANALYZE orders;
 
 SELECT
     count(*) AS rows_loaded,
@@ -126,11 +125,11 @@ FROM orders;
 -- This endpoint filters one tenant and status, limits a time range, then asks
 -- for newest orders. Expect a sequential scan (possibly parallel) and a sort.
 
-\echo 'CASE 1 - Baseline: no useful order-list index'
+SELECT 'CASE 1 - Baseline: no useful order-list index' AS lab_step;
 EXPLAIN (ANALYZE, BUFFERS)
 SELECT id, user_id, status, total_cents, created_at
 FROM orders
-WHERE tenant_id = LEAST(42, :tenant_count::integer)
+WHERE tenant_id = current_setting('db_index_lab.target_tenant')::integer
   AND status = 'PAID'
   AND created_at >= TIMESTAMPTZ '2025-01-01 00:00:00+00'
   AND created_at <  TIMESTAMPTZ '2026-01-01 00:00:00+00'
@@ -141,14 +140,14 @@ LIMIT 50;
 -- Case 2: a single-column index helps filtering, but not the whole request
 -- ---------------------------------------------------------------------------
 
-\echo 'CASE 2 - Single-column B-tree on tenant_id'
+SELECT 'CASE 2 - Single-column B-tree on tenant_id' AS lab_step;
 CREATE INDEX idx_orders_tenant_id ON orders (tenant_id);
 ANALYZE orders;
 
 EXPLAIN (ANALYZE, BUFFERS)
 SELECT id, user_id, status, total_cents, created_at
 FROM orders
-WHERE tenant_id = LEAST(42, :tenant_count::integer)
+WHERE tenant_id = current_setting('db_index_lab.target_tenant')::integer
   AND status = 'PAID'
   AND created_at >= TIMESTAMPTZ '2025-01-01 00:00:00+00'
   AND created_at <  TIMESTAMPTZ '2026-01-01 00:00:00+00'
@@ -167,7 +166,7 @@ DROP INDEX idx_orders_tenant_id;
 -- tenant_id and status are equality predicates. created_at and id match
 -- the requested order, so PostgreSQL can stop after it finds 50 matching rows.
 
-\echo 'CASE 3 - Compound B-tree aligned with filter and order'
+SELECT 'CASE 3 - Compound B-tree aligned with filter and order' AS lab_step;
 CREATE INDEX idx_orders_list
     ON orders (tenant_id, status, created_at DESC, id DESC);
 ANALYZE orders;
@@ -175,7 +174,7 @@ ANALYZE orders;
 EXPLAIN (ANALYZE, BUFFERS)
 SELECT id, user_id, status, total_cents, created_at
 FROM orders
-WHERE tenant_id = LEAST(42, :tenant_count::integer)
+WHERE tenant_id = current_setting('db_index_lab.target_tenant')::integer
   AND status = 'PAID'
   AND created_at >= TIMESTAMPTZ '2025-01-01 00:00:00+00'
   AND created_at <  TIMESTAMPTZ '2026-01-01 00:00:00+00'
@@ -191,7 +190,7 @@ SELECT pg_size_pretty(pg_relation_size('idx_orders_list')) AS compound_index_siz
 -- order. They make the index larger and increase write cost, so include only
 -- stable columns that a hot query really needs.
 
-\echo 'CASE 4 - Covering B-tree with INCLUDE'
+SELECT 'CASE 4 - Covering B-tree with INCLUDE' AS lab_step;
 DROP INDEX idx_orders_list;
 CREATE INDEX idx_orders_list_covering
     ON orders (tenant_id, status, created_at DESC, id DESC)
@@ -201,7 +200,7 @@ ANALYZE orders;
 EXPLAIN (ANALYZE, BUFFERS)
 SELECT id, user_id, status, total_cents, created_at
 FROM orders
-WHERE tenant_id = LEAST(42, :tenant_count::integer)
+WHERE tenant_id = current_setting('db_index_lab.target_tenant')::integer
   AND status = 'PAID'
   AND created_at >= TIMESTAMPTZ '2025-01-01 00:00:00+00'
   AND created_at <  TIMESTAMPTZ '2026-01-01 00:00:00+00'
@@ -216,7 +215,7 @@ SELECT pg_size_pretty(pg_relation_size('idx_orders_list_covering')) AS covering_
 -- The query predicate must imply the index predicate. Parameterized SQL whose
 -- predicate cannot be proven at planning time may not use a partial index.
 
-\echo 'CASE 5 - Partial index for active NEW orders'
+SELECT 'CASE 5 - Partial index for active NEW orders' AS lab_step;
 DROP INDEX idx_orders_list_covering;
 CREATE INDEX idx_orders_new_queue
     ON orders (tenant_id, created_at DESC, id DESC)
@@ -227,7 +226,7 @@ ANALYZE orders;
 EXPLAIN (ANALYZE, BUFFERS)
 SELECT id, user_id, created_at, total_cents
 FROM orders
-WHERE tenant_id = LEAST(42, :tenant_count::integer)
+WHERE tenant_id = current_setting('db_index_lab.target_tenant')::integer
   AND deleted_at IS NULL
   AND status = 'NEW'
 ORDER BY created_at DESC, id DESC
@@ -241,7 +240,7 @@ SELECT pg_size_pretty(pg_relation_size('idx_orders_new_queue')) AS partial_index
 -- customer_email lives inside canonical metadata. The query expression and
 -- indexed expression must match for this expression index to be useful.
 
-\echo 'CASE 6 - Expression index for case-insensitive email lookup'
+SELECT 'CASE 6 - Expression index for case-insensitive email lookup' AS lab_step;
 EXPLAIN (ANALYZE, BUFFERS)
 SELECT id, tenant_id, created_at
 FROM orders
@@ -264,7 +263,7 @@ ORDER BY id;
 -- jsonb_path_ops is compact and focused on @> containment. Use the default
 -- jsonb_ops class when operators such as key existence (?, ?|, ?&) are needed.
 
-\echo 'CASE 7 - JSONB containment before and after a GIN index'
+SELECT 'CASE 7 - JSONB containment before and after a GIN index' AS lab_step;
 EXPLAIN (ANALYZE, BUFFERS)
 SELECT count(*)
 FROM orders
@@ -286,7 +285,7 @@ WHERE metadata @> '{"priority": true}'::jsonb;
 -- BRIN is tiny and lossy: it narrows heap ranges, then rechecks rows. If the
 -- heap is not correlated with created_at, the same BRIN can be ineffective.
 
-\echo 'CASE 8 - Narrow time range before and after a BRIN index'
+SELECT 'CASE 8 - Narrow time range before and after a BRIN index' AS lab_step;
 EXPLAIN (ANALYZE, BUFFERS)
 SELECT count(*)
 FROM orders
@@ -314,12 +313,15 @@ WHERE schemaname = 'db_index_lab'
   AND relname = 'orders'
 ORDER BY pg_relation_size(indexrelid) DESC, indexrelname;
 
-\echo 'Lab complete.'
-\if :cleanup
-  \echo 'cleanup=true: dropping the dedicated db_index_lab schema.'
-  RESET search_path;
-  DROP SCHEMA db_index_lab CASCADE;
-\else
-  \echo 'Objects kept in schema db_index_lab for inspection.'
-  \echo 'Cleanup later with: DROP SCHEMA db_index_lab CASCADE;'
-\endif
+SELECT 'Lab complete; objects kept in schema db_index_lab for inspection.' AS lab_step;
+
+RESET search_path;
+RESET application_name;
+RESET jit;
+
+-- Optional follow-up: execute this statement separately after the script has
+-- committed, then rerun Case 4 to inspect visibility-map-driven Heap Fetches:
+-- VACUUM (ANALYZE) db_index_lab.orders;
+
+-- Optional cleanup (disabled by default):
+-- DROP SCHEMA db_index_lab CASCADE;
