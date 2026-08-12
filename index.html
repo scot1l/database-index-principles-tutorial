@@ -360,6 +360,45 @@
     .index-slip span { padding: 7px 9px; border-bottom: 1px solid rgba(20,100,71,.25); }
     .index-slip span:nth-child(odd) { color: var(--green); background: var(--green-soft); }
 
+    .scan-route-map { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .scan-route {
+      position: relative;
+      min-width: 0;
+      padding: 20px;
+      background: rgba(250,246,233,.72);
+      border: 1px solid var(--line-strong);
+      box-shadow: inset 0 4px 0 var(--route-color);
+    }
+    .scan-route.seq { --route-color: var(--orange); }
+    .scan-route.index { --route-color: var(--green); }
+    .scan-route.bitmap { --route-color: var(--blue); }
+    .scan-route-head { display: flex; justify-content: space-between; gap: 12px; align-items: start; margin-bottom: 16px; }
+    .scan-route-head h4 { margin: 0; font-size: 18px; }
+    .scan-route-head span { flex: 0 0 auto; color: var(--route-color); font: 800 10px/1.3 var(--mono); letter-spacing: .08em; }
+    .scan-route-kicker { min-height: 42px; margin: 0 0 14px; color: var(--ink-soft); font-size: 13px; line-height: 1.55; }
+    .scan-route-process { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; min-height: 72px; padding: 12px; background: var(--paper); border: 1px dashed var(--line-strong); }
+    .scan-route-process .route-page,
+    .scan-route-process .route-token {
+      display: grid;
+      place-items: center;
+      min-width: 32px;
+      min-height: 32px;
+      padding: 4px 6px;
+      color: var(--ink-soft);
+      background: var(--paper-deep);
+      border: 1px solid var(--line);
+      font: 700 10px/1 var(--mono);
+    }
+    .scan-route-process .route-page.hit { color: white; background: var(--route-color); border-color: var(--route-color); }
+    .scan-route-process .route-token { color: white; background: var(--route-color); border-color: var(--route-color); }
+    .scan-route-process .route-arrow { color: var(--route-color); font: 800 13px/1 var(--mono); }
+    .scan-route-process .route-group { min-width: 58px; min-height: 38px; }
+    .scan-route-tradeoff { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
+    .scan-route-tradeoff p { margin: 0; color: var(--ink-soft); font-size: 12px; line-height: 1.55; }
+    .scan-route-tradeoff strong { display: block; margin-bottom: 2px; color: var(--ink); font: 800 10px/1.3 var(--mono); letter-spacing: .08em; }
+    .bitmap-plan-note { margin: 16px 0 0; padding: 12px 14px; color: var(--ink-soft); background: var(--blue-soft); border-left: 4px solid var(--blue); font-size: 13px; }
+    .bitmap-plan-note code { color: var(--blue); }
+
     .steps { counter-reset: step; display: grid; gap: 14px; margin: 28px 0; }
     .step { counter-increment: step; display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 16px; align-items: start; padding: 18px 0; border-bottom: 1px dashed var(--line); }
     .step::before { content: counter(step, decimal-leading-zero); display: grid; place-items: center; width: 44px; height: 44px; color: var(--paper-soft); background: var(--green); font: 800 14px/1 var(--mono); transform: rotate(-2deg); }
@@ -381,16 +420,34 @@
     .field label { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 8px; font: 700 13px/1.4 var(--mono); }
     .field output { color: var(--orange); }
     .field input[type="range"] { width: 100%; min-height: 44px; accent-color: var(--green); }
+    .scan-presets { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 16px 0 4px; }
+    .scan-presets > span { margin-right: 4px; color: var(--ink-soft); font: 800 11px/1.3 var(--mono); letter-spacing: .08em; }
+    .scan-preset {
+      min-height: 42px;
+      padding: 8px 11px;
+      color: var(--ink);
+      background: transparent;
+      border: 1px solid var(--line-strong);
+      font: 700 12px/1.3 var(--mono);
+      cursor: pointer;
+    }
+    .scan-preset[aria-pressed="true"] { color: var(--paper-soft); background: var(--ink); border-color: var(--ink); }
     .lab-results { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
     .lab-result { padding: 18px; border-top: 4px solid var(--line-strong); background: var(--paper); }
     .lab-result.active { border-color: var(--green); background: var(--green-soft); }
     .lab-result span { display: block; color: var(--ink-soft); font: 700 11px/1.3 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
     .lab-result b { display: block; margin: 9px 0 4px; font: 900 28px/1 var(--mono); }
     .lab-result small { color: var(--ink-soft); }
-    .scan-track { display: grid; grid-template-columns: repeat(24, 1fr); gap: 3px; margin-top: 20px; }
+    .scan-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; margin: 20px 0; background: var(--line); border: 1px solid var(--line); }
+    .scan-fact { padding: 12px 14px; background: rgba(250,246,233,.92); }
+    .scan-fact span { display: block; color: var(--ink-soft); font: 700 10px/1.3 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+    .scan-fact b { display: block; margin-top: 5px; font: 800 18px/1.2 var(--mono); }
+    .scan-track-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 18px; margin-top: 20px; }
+    .scan-track-head strong { font: 800 12px/1.4 var(--mono); }
+    .scan-track-head span { color: var(--ink-soft); font-size: 12px; }
+    .scan-track { display: grid; grid-template-columns: repeat(24, 1fr); gap: 3px; margin-top: 9px; }
     .scan-track i { height: 18px; background: var(--paper-deep); border: 1px solid var(--line); transition: background .2s ease; }
-    .scan-track i.read { background: var(--orange); border-color: var(--orange); }
-    .scan-track i.index-read { background: var(--green); border-color: var(--green); }
+    .scan-track i.touched { background: var(--blue); border-color: var(--blue); }
     .lab-note { margin: 18px 0 0; color: var(--ink-soft); font-size: 13px; }
 
     .tree-stage { min-height: 280px; display: grid; align-content: center; gap: 26px; overflow-x: auto; padding: 6px 4px 12px; }
@@ -399,6 +456,48 @@
     .tree-level:first-child .tree-node { color: white; background: var(--green); border-color: var(--green); }
     .tree-level:last-child .tree-node { background: var(--orange-soft); }
     .tree-labels { display: flex; justify-content: center; gap: 26px; color: var(--ink-soft); font: 11px/1.3 var(--mono); }
+
+    .split-ledger { margin: 28px 0; padding: clamp(18px, 3vw, 30px); background: rgba(250,246,233,.55); border: 1px solid var(--line-strong); }
+    .split-ledger > header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 18px; margin-bottom: 22px; }
+    .split-ledger > header h4 { margin: 0; font-size: 22px; }
+    .split-ledger > header span { color: var(--ink-soft); font: 700 11px/1.4 var(--mono); letter-spacing: .08em; }
+    .write-patterns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+    .write-pattern { min-width: 0; padding: 20px; background: var(--paper-soft); border-top: 4px solid var(--pattern-color); }
+    .write-pattern.ordered { --pattern-color: var(--green); }
+    .write-pattern.random { --pattern-color: var(--orange); }
+    .write-pattern h5 { display: flex; justify-content: space-between; gap: 10px; margin: 0 0 6px; font-size: 17px; }
+    .write-pattern h5 span { color: var(--pattern-color); font: 800 10px/1.4 var(--mono); letter-spacing: .08em; }
+    .write-pattern > p { min-height: 48px; margin: 0 0 16px; color: var(--ink-soft); font-size: 13px; line-height: 1.6; }
+    .leaf-scene { display: grid; gap: 10px; padding: 14px; background: rgba(230,220,192,.38); border: 1px dashed var(--line-strong); }
+    .leaf-scene-label { display: flex; justify-content: space-between; gap: 10px; color: var(--ink-soft); font: 700 10px/1.3 var(--mono); text-transform: uppercase; }
+    .leaf-chain { display: flex; align-items: center; gap: 7px; min-width: 0; }
+    .leaf-page {
+      flex: 1 1 0;
+      min-width: 0;
+      padding: 8px;
+      background: var(--paper);
+      border: 1px solid var(--line-strong);
+      box-shadow: inset 0 3px 0 var(--pattern-color);
+    }
+    .leaf-page.is-target { outline: 2px solid var(--pattern-color); outline-offset: 2px; }
+    .leaf-page.is-new { border-style: dashed; }
+    .leaf-page b { display: block; margin-bottom: 6px; color: var(--ink-soft); font: 800 9px/1.2 var(--mono); }
+    .leaf-keys { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; }
+    .leaf-keys i { display: grid; place-items: center; min-height: 22px; color: var(--ink-soft); background: var(--paper-deep); font: normal 700 9px/1 var(--mono); }
+    .leaf-keys i.new-key { color: white; background: var(--pattern-color); }
+    .leaf-link { flex: 0 0 auto; color: var(--pattern-color); font: 900 14px/1 var(--mono); }
+    .split-action { display: flex; align-items: center; justify-content: center; gap: 9px; color: var(--pattern-color); font: 800 11px/1.4 var(--mono); }
+    .split-action::before, .split-action::after { content: ""; height: 1px; flex: 1; background: currentColor; opacity: .45; }
+    .write-cost { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
+    .write-cost p { margin: 0; padding: 9px; color: var(--ink-soft); background: rgba(230,220,192,.35); font-size: 12px; line-height: 1.5; }
+    .write-cost strong { display: block; color: var(--ink); font: 800 10px/1.3 var(--mono); }
+    .uuid-balance { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; margin: 18px 0 0; background: var(--line); border: 1px solid var(--line); }
+    .uuid-balance article { padding: 16px; background: rgba(250,246,233,.9); }
+    .uuid-balance h5 { margin: 0 0 6px; font-size: 15px; }
+    .uuid-balance p { margin: 0; color: var(--ink-soft); font-size: 12px; line-height: 1.6; }
+    .uuid-balance .avoid { box-shadow: inset 0 4px 0 var(--orange); }
+    .uuid-balance .consider { box-shadow: inset 0 4px 0 var(--green); }
+    .uuid-balance .engine { box-shadow: inset 0 4px 0 var(--blue); }
 
     .plan-box { margin: 28px 0; border: 1px solid var(--line-strong); background: #24271f; color: #e7eadb; }
     .plan-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; padding: 12px 16px; color: #b8c3b7; background: #30362e; border-bottom: 1px solid #4f594f; font: 700 11px/1.4 var(--mono); letter-spacing: .07em; }
@@ -433,6 +532,40 @@
     .structure-compare tbody tr.is-choice { background: rgba(216,231,216,.72); box-shadow: inset 5px 0 0 var(--green); }
     .structure-compare tbody tr.is-choice th { color: var(--green); }
     .choice-mark { display: block; width: max-content; margin-top: 7px; padding: 3px 7px; color: var(--paper-soft); background: var(--green); font: 800 10px/1.3 var(--mono); letter-spacing: .08em; }
+
+    .index-recipe { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin: 24px 0; counter-reset: recipe; }
+    .recipe-step {
+      position: relative;
+      min-width: 0;
+      padding: 42px 16px 17px;
+      background: rgba(250,246,233,.7);
+      border: 1px solid var(--line);
+      border-top: 5px solid var(--green);
+      counter-increment: recipe;
+    }
+    .recipe-step:nth-child(3), .recipe-step:nth-child(4) { border-top-color: var(--orange); }
+    .recipe-step:nth-child(5) { border-top-color: var(--blue); }
+    .recipe-step::before {
+      content: "0" counter(recipe);
+      position: absolute;
+      top: 13px;
+      left: 16px;
+      color: var(--ink-soft);
+      font: 900 11px/1 var(--mono);
+      letter-spacing: .08em;
+    }
+    .recipe-step h4 { margin: 0 0 8px; font-size: 17px; }
+    .recipe-step p { margin: 0; color: var(--ink-soft); font-size: 13px; line-height: 1.65; }
+    .equal-order-card { margin: 22px 0 34px; border: 1px solid var(--line-strong); background: rgba(216,231,216,.48); box-shadow: 6px 6px 0 rgba(32,40,34,.09); }
+    .equal-order-card > header { display: flex; justify-content: space-between; gap: 18px; align-items: baseline; padding: 15px 18px; color: var(--paper-soft); background: var(--green); }
+    .equal-order-card > header h3 { margin: 0; font-size: 21px; }
+    .equal-order-card > header span { font: 800 10px/1.3 var(--mono); letter-spacing: .12em; }
+    .equal-order-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .equal-order-grid article { padding: 17px 18px; border-right: 1px dashed var(--line); }
+    .equal-order-grid article:last-child { border-right: 0; }
+    .equal-order-grid b { display: block; margin-bottom: 6px; color: var(--green); font-family: var(--display); font-size: 17px; }
+    .equal-order-grid p { margin: 0; font-size: 13px; line-height: 1.65; }
+    .equal-order-conclusion { margin: 0; padding: 13px 18px; border-top: 1px dashed var(--line-strong); font-size: 14px; }
 
     .index-options { display: flex; flex-wrap: wrap; gap: 9px; margin: 18px 0; }
     .index-option {
@@ -479,6 +612,30 @@
     .flow-side.my-flow { border-color: var(--orange); }
     .flow-divider { display: grid; place-items: center; color: var(--ink-soft); font: 800 12px/1.2 var(--mono); writing-mode: vertical-rl; letter-spacing: .12em; }
 
+    .cluster-figure { margin: 30px 0; padding: clamp(20px, 3vw, 30px); background: rgba(250,246,233,.58); border: 1px solid var(--line-strong); }
+    .cluster-figure > header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 18px; margin-bottom: 22px; }
+    .cluster-figure > header h3 { margin: 0; }
+    .cluster-figure > header span { color: var(--orange); font: 800 11px/1.4 var(--mono); letter-spacing: .08em; }
+    .cluster-map { display: grid; grid-template-columns: .85fr 52px 1.15fr; gap: 14px; align-items: stretch; }
+    .cluster-index { padding: 18px; background: var(--paper-soft); border-top: 4px solid var(--cluster-color); }
+    .cluster-index.secondary { --cluster-color: var(--blue); }
+    .cluster-index.primary { --cluster-color: var(--orange); }
+    .cluster-index h4 { margin: 0 0 5px; }
+    .cluster-index > p { min-height: 44px; margin: 0 0 14px; color: var(--ink-soft); font-size: 13px; line-height: 1.55; }
+    .mini-tree { display: grid; justify-items: center; gap: 12px; padding: 14px 8px; background: rgba(230,220,192,.34); border: 1px dashed var(--line-strong); }
+    .mini-root { padding: 7px 12px; color: white; background: var(--cluster-color); font: 800 10px/1.2 var(--mono); }
+    .mini-branches { width: min(82%, 260px); height: 14px; border-top: 1px solid var(--cluster-color); border-left: 1px solid var(--cluster-color); border-right: 1px solid var(--cluster-color); }
+    .mini-leaves { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; width: 100%; }
+    .mini-leaf { min-width: 0; padding: 9px; background: var(--paper); border: 1px solid var(--cluster-color); }
+    .mini-leaf b { display: block; margin-bottom: 6px; color: var(--cluster-color); font: 800 9px/1.2 var(--mono); }
+    .mini-record { display: block; overflow: hidden; margin-top: 4px; padding: 5px 6px; color: var(--ink-soft); background: var(--paper-deep); font: 700 9px/1.25 var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+    .mini-record.full { color: var(--ink); background: var(--orange-soft); white-space: normal; }
+    .cluster-lookup { display: grid; place-items: center; color: var(--orange); font: 900 11px/1.25 var(--mono); text-align: center; }
+    .cluster-lookup::after { content: "→"; display: block; margin-top: 5px; font-size: 30px; }
+    .cluster-legend { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
+    .cluster-legend p { margin: 0; padding: 12px; color: var(--ink-soft); background: rgba(230,220,192,.35); font-size: 12px; line-height: 1.55; }
+    .cluster-legend strong { display: block; color: var(--ink); font: 800 10px/1.3 var(--mono); letter-spacing: .06em; }
+
     .tool-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 30px 0; }
     .tool-card { position: relative; min-height: 230px; padding: 23px; background: rgba(250,246,233,.62); border: 1px solid var(--line); transition: transform .18s ease, box-shadow .18s ease; }
     .tool-card:hover { transform: translateY(-3px) rotate(-.2deg); box-shadow: 5px 7px 0 rgba(32,40,34,.09); }
@@ -491,6 +648,32 @@
     details.deep-dive summary { padding: 14px 2px; cursor: pointer; font-weight: 800; }
     details.deep-dive[open] summary { color: var(--green); }
     details.deep-dive > div { padding: 0 2px 18px; }
+    .cursor-example { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: stretch; margin-top: 4px; }
+    .cursor-page { padding: 14px; background: rgba(250,246,233,.72); border: 1px solid var(--line); }
+    .cursor-page > b { display: block; margin-bottom: 9px; font: 800 11px/1.3 var(--mono); letter-spacing: .07em; }
+    .cursor-row { display: grid; grid-template-columns: 70px 1fr; gap: 8px; padding: 5px 7px; background: var(--paper-deep); border-bottom: 1px solid rgba(117,111,96,.2); font: 700 11px/1.35 var(--mono); }
+    .cursor-row.boundary { color: white; background: var(--orange); }
+    .cursor-token { display: grid; place-items: center; min-width: 176px; padding: 12px; color: var(--paper-soft); background: var(--ink); text-align: center; font: 700 10px/1.5 var(--mono); }
+    .cursor-token::after { content: "→"; display: block; color: #ffc68f; font-size: 26px; }
+    .cursor-example-note { margin: 10px 0 0; color: var(--ink-soft); font-size: 13px; }
+    .visibility-flow { display: grid; grid-template-columns: 1fr auto 1fr auto 1.25fr; gap: 9px; align-items: stretch; margin: 4px 0 14px; }
+    .visibility-node { min-width: 0; padding: 14px; background: rgba(250,246,233,.76); border-top: 4px solid var(--visibility-color, var(--line-strong)); }
+    .visibility-node.index { --visibility-color: var(--green); }
+    .visibility-node.map { --visibility-color: var(--blue); }
+    .visibility-node b { display: block; margin-bottom: 6px; font: 800 11px/1.35 var(--mono); letter-spacing: .05em; }
+    .visibility-node span { display: block; color: var(--ink-soft); font-size: 12px; line-height: 1.55; }
+    .visibility-arrow { display: grid; place-items: center; color: var(--blue); font: 900 24px/1 var(--mono); }
+    .visibility-outcomes { display: grid; gap: 7px; }
+    .visibility-outcome { padding: 10px 12px; color: var(--ink-soft); background: var(--paper-deep); border-left: 4px solid var(--outcome-color); font-size: 12px; line-height: 1.5; }
+    .visibility-outcome.yes { --outcome-color: var(--green); }
+    .visibility-outcome.no { --outcome-color: var(--orange); }
+    .visibility-outcome strong { color: var(--ink); font-family: var(--mono); }
+    .visibility-lifecycle { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; padding: 11px 13px; color: var(--ink-soft); background: var(--blue-soft); font-size: 12px; }
+    .visibility-lifecycle b { color: var(--ink); font-family: var(--mono); }
+    .visibility-lifecycle i { color: var(--blue); font: normal 900 16px/1 var(--mono); }
+    .visibility-footnotes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+    .visibility-footnotes p { margin: 0; padding: 10px; color: var(--ink-soft); background: rgba(230,220,192,.35); font-size: 12px; line-height: 1.55; }
+    .visibility-footnotes strong { display: block; color: var(--ink); font: 800 10px/1.3 var(--mono); }
 
     .type-questions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 20px 0; }
     .type-question { display: grid; gap: 7px; }
@@ -571,12 +754,19 @@
       .hero-sheet { padding-top: 52px; }
       .chapter-heading { grid-template-columns: 58px minmax(0, 1fr); gap: 16px; }
       .chapter-no { font-size: 21px; }
-      .case-grid, .columns-2, .columns-3, .page-map { grid-template-columns: 1fr; }
+      .case-grid, .columns-2, .columns-3, .page-map, .scan-route-map, .write-patterns, .uuid-balance, .cluster-map, .cluster-legend { grid-template-columns: 1fr; }
       .arrow { transform: rotate(90deg); text-align: center; }
-      .lab-controls, .lab-results { grid-template-columns: 1fr; }
-      .plan-legend, .tool-grid, .quiz-grid, .cheat-grid, .pagination-stage { grid-template-columns: 1fr; }
+      .lab-controls, .lab-results, .scan-facts { grid-template-columns: 1fr; }
+      .plan-legend, .tool-grid, .quiz-grid, .cheat-grid, .pagination-stage, .cursor-example, .visibility-flow, .visibility-footnotes, .index-recipe, .equal-order-grid { grid-template-columns: 1fr; }
       .builder-verdict, .split-flow { grid-template-columns: 1fr; }
+      .equal-order-grid article { border-right: 0; border-bottom: 1px dashed var(--line); }
+      .equal-order-grid article:last-child { border-bottom: 0; }
       .flow-divider { writing-mode: horizontal-tb; }
+      .cluster-lookup { min-height: 42px; }
+      .cluster-lookup::after { content: "↓"; margin: 0 0 0 8px; display: inline; }
+      .cursor-token { min-width: 0; }
+      .cursor-token::after { content: "↓"; }
+      .visibility-arrow { min-height: 24px; transform: rotate(90deg); }
       .type-questions { grid-template-columns: 1fr; }
       .facts li { grid-template-columns: 96px 1fr; }
       .hero-principle { padding-left: 58px; }
@@ -594,6 +784,8 @@
       .case-file::before { position: static; display: inline-block; margin-bottom: 16px; }
       .case-file h3 { padding-right: 0; }
       .facts li { grid-template-columns: 1fr; gap: 2px; }
+      .write-pattern h5 { display: block; }
+      .write-pattern h5 span { display: block; margin-top: 5px; }
       pre { font-size: 12px; }
       .lab { padding: 20px 14px; box-shadow: 5px 6px 0 rgba(32,40,34,.12); }
       .lab-header { display: block; }
@@ -779,25 +971,35 @@
       </div>
 
       <figure class="diagram reveal">
-        <div class="diagram-title"><h3>同样找到 3 行，两条路径</h3><span>示意图 · 非真实页布局</span></div>
-        <div class="page-map">
-          <div>
-            <p class="tag">顺序扫描：读完整段</p>
-            <div class="disk-pages" aria-label="顺序扫描页示意">
-              <span class="disk-page">P01</span><span class="disk-page">P02</span><span class="disk-page hit">P03</span><span class="disk-page">P04</span><span class="disk-page">P05</span>
-              <span class="disk-page">P06</span><span class="disk-page hit">P07</span><span class="disk-page">P08</span><span class="disk-page">P09</span><span class="disk-page hit">P10</span>
+        <div class="diagram-title"><h3>同一批命中行，三条取证路线</h3><span>重点看“访问页的顺序”</span></div>
+        <div class="scan-route-map">
+          <article class="scan-route seq">
+            <div class="scan-route-head"><h4>Seq Scan</h4><span>整段顺读</span></div>
+            <p class="scan-route-kicker">不先找地址，沿物理页从头到尾读取并逐行判断。</p>
+            <div class="scan-route-process" role="img" aria-label="顺序扫描依次读取 P01 到 P10，命中 P03、P07 和 P10">
+              <span class="route-page">P01</span><span class="route-page">P02</span><span class="route-page hit">P03</span><span class="route-page">P04</span><span class="route-page">P05</span>
+              <span class="route-page">P06</span><span class="route-page hit">P07</span><span class="route-page">P08</span><span class="route-page">P09</span><span class="route-page hit">P10</span>
             </div>
-          </div>
-          <div class="arrow" aria-hidden="true">↔</div>
-          <div>
-            <p class="tag">索引扫描：先定位 TID</p>
-            <div class="index-slip" aria-label="索引项与堆地址示意">
-              <span>2026-08-08 09:10</span><span>→ P03 / #12</span>
-              <span>2026-08-08 09:12</span><span>→ P07 / #04</span>
-              <span>2026-08-08 09:18</span><span>→ P10 / #21</span>
+            <div class="scan-route-tradeoff"><p><strong>强项</strong>连续批量读取</p><p><strong>代价</strong>所有表页都要检查</p></div>
+          </article>
+          <article class="scan-route index">
+            <div class="scan-route-head"><h4>Index Scan</h4><span>逐条回表</span></div>
+            <p class="scan-route-kicker">B+Tree 直接给出 TID，再按索引顺序逐条访问堆页。</p>
+            <div class="scan-route-process" role="img" aria-label="索引扫描按照地址在 P03、P07、P03、P10、P07 之间跳转">
+              <span class="route-token">P03</span><span class="route-arrow">→</span><span class="route-token">P07</span><span class="route-arrow">→</span><span class="route-token">P03</span><span class="route-arrow">→</span><span class="route-token">P10</span><span class="route-arrow">→</span><span class="route-token">P07</span>
             </div>
-          </div>
+            <div class="scan-route-tradeoff"><p><strong>强项</strong>少量结果可立即返回</p><p><strong>代价</strong>结果多时随机跳转</p></div>
+          </article>
+          <article class="scan-route bitmap">
+            <div class="scan-route-head"><h4>Bitmap Scan</h4><span>先归拢再取</span></div>
+            <p class="scan-route-kicker">先收集 TID，按堆页归组，再按页号批量读取候选行。</p>
+            <div class="scan-route-process" role="img" aria-label="位图扫描把地址归组为 P03 两行、P07 两行、P10 一行，再逐页读取">
+              <span class="route-token route-group">P03 × 2</span><span class="route-arrow">→</span><span class="route-token route-group">P07 × 2</span><span class="route-arrow">→</span><span class="route-token route-group">P10 × 1</span>
+            </div>
+            <div class="scan-route-tradeoff"><p><strong>强项</strong>同一页集中访问一次</p><p><strong>代价</strong>建位图且不保留索引序</p></div>
+          </article>
         </div>
+        <figcaption class="bitmap-plan-note">在 PostgreSQL 执行计划中，它通常拆成 <code>Bitmap Index Scan</code>（收集 TID）和 <code>Bitmap Heap Scan</code>（按页取行）；内存不足形成 lossy bitmap 时，还需要对页内记录重新检查条件。</figcaption>
       </figure>
 
       <div class="lab reveal" id="scan-lab">
@@ -808,14 +1010,20 @@
           </div>
           <span class="lab-index">LAB 01 / ACCESS PATH</span>
         </div>
-        <p>拖动参数，观察三种访问路径的“相对工作量”。这是帮助建立直觉的简化模型，不是 PostgreSQL 成本公式或性能承诺。</p>
+        <p>先依次点击三个典型场景，再拖动参数。观察满足条件的行如何散落到数据页上，以及最合算的路径如何从 Index 转向 Bitmap，最后转向 Seq Scan。</p>
+        <div class="scan-presets" role="group" aria-label="典型命中场景">
+          <span>建议演示顺序</span>
+          <button class="scan-preset" type="button" data-selectivity="-3" aria-pressed="false">① 精准点查</button>
+          <button class="scan-preset" type="button" data-selectivity="-1" aria-pressed="false">② 中等范围</button>
+          <button class="scan-preset" type="button" data-selectivity="1" aria-pressed="false">③ 大范围读取</button>
+        </div>
         <div class="lab-controls">
           <div class="field">
             <label for="scan-rows">表行数 <output id="scan-rows-out">1,000,000</output></label>
             <input id="scan-rows" type="range" min="3" max="9" value="6" step="1">
           </div>
           <div class="field">
-            <label for="scan-selectivity">命中比例 <output id="scan-selectivity-out">1%</output></label>
+            <label for="scan-selectivity">满足 WHERE 的行占比 <output id="scan-selectivity-out">1%</output></label>
             <input id="scan-selectivity" type="range" min="-3" max="1.7" value="0" step="0.1">
           </div>
           <div class="field">
@@ -828,8 +1036,15 @@
           <div class="lab-result" id="index-result"><span>Index Scan</span><b id="index-cost">—</b><small>B+Tree 定位 + 随机回表</small></div>
           <div class="lab-result" id="bitmap-result"><span>Bitmap Scan</span><b id="bitmap-cost">—</b><small>先收集位置，再按页批量取</small></div>
         </div>
+        <div class="scan-facts" aria-label="当前场景的页访问推演">
+          <div class="scan-fact"><span>预计命中行</span><b id="scan-matches">—</b></div>
+          <div class="scan-fact"><span>表数据页</span><b id="scan-pages">—</b></div>
+          <div class="scan-fact"><span>可能触及页</span><b id="scan-touched-pages">—</b></div>
+        </div>
+        <div class="scan-track-head"><strong>随机分布时，命中行可能散落到这些表页</strong><span id="scan-track-label">—</span></div>
         <div class="scan-track" id="scan-track" role="img" aria-label="页读取比例示意"></div>
         <p class="lab-note" id="scan-verdict" role="status" aria-live="polite" aria-atomic="true">正在计算建议访问路径……</p>
+        <p class="lab-note">相对工作量把当前最优路径记为 <strong>1.0×</strong>；它不是耗时或 PostgreSQL 的真实 cost。模型假设命中行在堆页中随机分布，真实结果还受物理相关性、可见性、返回列、并发与配置影响。</p>
       </div>
 
       <h3 class="reveal">“选择性”不是字段的永久属性</h3>
@@ -949,14 +1164,62 @@
       </div>
 
       <h3 class="reveal">页分裂：有序结构的写入账单</h3>
-      <p class="reveal">叶页满时需要分裂并更新上层结构。随机键可能把写入散布到许多页；单调递增键更集中，却可能形成右侧热点。索引越多，每次 <code>INSERT</code>/<code>UPDATE</code>/<code>DELETE</code> 要维护的结构越多，WAL、缓存占用和 vacuum 压力也随之增加。</p>
+      <p class="reveal">B-tree 必须始终保持键有序。新键应该落入的叶页还有空间时，只需插入；目标页已满时，就要申请新页、在两个页之间重新分配索引项，并把新的分隔键写入父页。父页也满时，分裂还可能向上级联。</p>
+
+      <figure class="split-ledger reveal">
+        <header><h4>同样持续插入，落点决定维护方式</h4><span>示意容量远小于真实页面</span></header>
+        <div class="write-patterns">
+          <article class="write-pattern ordered">
+            <h5>递增键：主要写最右叶页 <span>BIGINT / UUIDv7-like</span></h5>
+            <p>新键通常大于现有键，写入沿叶链向右推进；旧页较少被重新触碰。</p>
+            <div class="leaf-scene" role="img" aria-label="递增键 25 写入最右侧叶页，页满后在右边创建新页">
+              <div class="leaf-scene-label"><span>插入前</span><span>new key = 25</span></div>
+              <div class="leaf-chain">
+                <div class="leaf-page"><b>P10</b><span class="leaf-keys"><i>01</i><i>05</i><i>09</i><i>12</i></span></div><span class="leaf-link">→</span>
+                <div class="leaf-page is-target"><b>P11 · FULL</b><span class="leaf-keys"><i>14</i><i>17</i><i>20</i><i>23</i></span></div>
+              </div>
+              <div class="split-action">右侧分裂</div>
+              <div class="leaf-chain">
+                <div class="leaf-page"><b>P11</b><span class="leaf-keys"><i>14</i><i>17</i><i>20</i><i>23</i></span></div><span class="leaf-link">→</span>
+                <div class="leaf-page is-new"><b>P12 · NEW</b><span class="leaf-keys"><i class="new-key">25</i><i>·</i><i>·</i><i>·</i></span></div>
+              </div>
+            </div>
+            <div class="write-cost"><p><strong>局部性</strong>活跃页集中，缓存友好</p><p><strong>代价</strong>高并发可能争用最右页</p></div>
+          </article>
+          <article class="write-pattern random">
+            <h5>随机键：在整棵树中找落点 <span>UUIDv4-like</span></h5>
+            <p>下一键可能落入任何键区间，多个中间叶页都会成为写入和分裂目标。</p>
+            <div class="leaf-scene" role="img" aria-label="随机键 37 插入中间的 P31 页，页满后在叶链中间分裂">
+              <div class="leaf-scene-label"><span>插入前</span><span>new key = 37</span></div>
+              <div class="leaf-chain">
+                <div class="leaf-page"><b>P30</b><span class="leaf-keys"><i>05</i><i>13</i><i>21</i><i>29</i></span></div><span class="leaf-link">→</span>
+                <div class="leaf-page is-target"><b>P31 · FULL</b><span class="leaf-keys"><i>31</i><i>35</i><i>42</i><i>48</i></span></div><span class="leaf-link">→</span>
+                <div class="leaf-page"><b>P32</b><span class="leaf-keys"><i>54</i><i>61</i><i>73</i><i>88</i></span></div>
+              </div>
+              <div class="split-action">中间分裂 + 更新父页</div>
+              <div class="leaf-chain">
+                <div class="leaf-page"><b>P31</b><span class="leaf-keys"><i>31</i><i>35</i><i class="new-key">37</i><i>·</i></span></div><span class="leaf-link">→</span>
+                <div class="leaf-page is-new"><b>P33 · NEW</b><span class="leaf-keys"><i>42</i><i>48</i><i>·</i><i>·</i></span></div>
+              </div>
+            </div>
+            <div class="write-cost"><p><strong>局部性</strong>活跃页分散，缓存更难命中</p><p><strong>代价</strong>更多中间页可能触发重排和分裂</p></div>
+          </article>
+        </div>
+        <figcaption class="uuid-balance">
+          <article class="avoid"><h5>为什么常说“不推荐 UUID 主键”</h5><p>通常批评的是<strong>随机 UUIDv4</strong>：16 字节键比 8 字节整数更宽，写入位置又随机，降低每页容量与缓存局部性；若以字符串保存，空间更糟。</p></article>
+          <article class="consider"><h5>不是所有 UUID 都一样</h5><p>UUIDv7 等时间有序方案通常能改善写入局部性，同时保留分布式生成能力，但不等同于严格连续自增。优先使用数据库原生 <code>uuid</code> 或紧凑二进制类型，不要用 36 字符文本冒充 UUID 类型。</p></article>
+          <article class="engine"><h5>先问是哪种存储引擎</h5><p>PostgreSQL 普通表不会因主键自动按主键物理排列，随机键主要扰动索引；InnoDB 主键是聚簇键，影响整行数据页，并被复制进每个二级索引。</p></article>
+        </figcaption>
+      </figure>
+
+      <div class="rule caution reveal"><strong>更准确的结论：</strong>不要无条件排斥 UUID；应避免“随机、过宽、字符串存储的 UUID”成为高写入表的聚簇主键。若需要全局唯一，可评估 UUIDv7、ULID 类有序标识，或使用内部窄主键加外部 UUID 唯一键，并用真实并发与索引规模验证。</div>
       <div class="db-callout pg reveal">
         <h4>PostgreSQL 的 MVCC 让故事更复杂</h4>
-        <p>更新通常产生新的 tuple 版本。若更新未涉及任何索引列、且同一堆页有空间，HOT 更新可以避免为新版本创建新的索引项；给“经常更新但不参与查询”的列乱加索引，可能顺手堵住这条优化路径。</p>
+        <p>更新通常产生新的 tuple 版本。若更新未涉及任何索引列、且同一堆页有空间，HOT 更新可以避免为新版本创建新的索引项；给“经常更新但不参与查询”的列乱加索引，可能顺手堵住这条优化路径。这里的堆页行为与 B-tree 索引页分裂是两笔不同的账。</p>
       </div>
       <div class="db-callout mysql reveal">
         <h4>InnoDB 的主键就是数据组织方式</h4>
-        <p>聚簇索引的叶记录包含整行；二级索引叶记录保存二级键和主键值。因此主键过宽会被复制进每个二级索引，放大空间和 I/O 成本。</p>
+        <p>聚簇索引的叶记录包含整行；二级索引叶记录保存二级键和主键值。因此主键既要考虑写入顺序，也要尽量短小稳定。过宽主键会被复制进每个二级索引，放大空间、缓存和 I/O 成本。</p>
       </div>
     </section>
 
@@ -1081,7 +1344,26 @@
         </article>
       </div>
 
-      <div class="rule reveal"><strong>可操作启发：</strong>先放稳定的等值边界，再处理范围与排序，最后考虑返回列；但必须拿所有高频查询变体一起验证。</div>
+      <div class="rule reveal"><strong>不要从“有哪些字段”开始建索引。</strong>先固定一条高频 SQL 的 <code>WHERE + ORDER BY + LIMIT</code>，再把它翻译成一条有序访问路径。</div>
+
+      <h3 class="reveal">从一条 SQL 推导联合索引：五步创建法</h3>
+      <div class="index-recipe reveal" aria-label="联合索引五步创建法">
+        <article class="recipe-step"><h4>固定查询形状</h4><p>把必填、可选条件、排序和分页写完整。不同条件组合可能是不同形状，不要先追求一条索引包办全部。</p></article>
+        <article class="recipe-step"><h4>排列等值边界</h4><p>把稳定的 <code>=</code> 条件作为左侧导航键；顺序优先服务重要的单列前缀、租户边界与复用需求。</p></article>
+        <article class="recipe-step"><h4>接上范围与排序</h4><p>等值列之后放时间等范围列，并让后续顺序匹配 <code>ORDER BY</code>。进入范围后，右侧列通常难再缩小连续扫描区间。</p></article>
+        <article class="recipe-step"><h4>补稳定边界</h4><p>排序值可能重复时追加唯一、稳定的 <code>id</code>；游标条件、排序方向和索引顺序保持一致。</p></article>
+        <article class="recipe-step"><h4>控制宽度并验证</h4><p>返回列按收益决定是否 <code>INCLUDE</code>；用代表性参数检查计划、读页、写放大和重复索引。</p></article>
+      </div>
+
+      <aside class="equal-order-card reveal">
+        <header><h3>两个等值列，谁在前？</h3><span>EQUALITY TIE-BREAKER</span></header>
+        <div class="equal-order-grid">
+          <article><b>总是同时出现</b><p>对这条查询，<code>(tenant_id, status)</code> 与 <code>(status, tenant_id)</code> 通常都能定位同一组合，差异往往不大。</p></article>
+          <article><b>存在单列查询</b><p>哪个重要条件会单独出现，哪个更值得成为左前缀。例如常查某租户全部订单，就让 <code>tenant_id</code> 在前。</p></article>
+          <article><b>条件有时缺席</b><p>若 <code>status</code> 可选，把它夹在时间前会破坏“不按状态”时的连续时间顺序；通常应为高频形状准备另一条索引。</p></article>
+        </div>
+        <p class="equal-order-conclusion"><strong>因此：</strong>不要机械套用“区分度最高的等值列在前”。当等值列总是一起出现时，应按<strong>前缀复用、业务边界和查询变体</strong>裁决；本例选择 <code>tenant_id</code> 在前，是因为租户是稳定边界，而不是因为它一定更“快”。</p>
+      </aside>
 
       <div class="lab reveal" id="composite-lab">
         <div class="lab-header">
@@ -1144,6 +1426,25 @@
 
       <h3 class="reveal">为什么排序要加 <code>id</code></h3>
       <p class="reveal"><code>created_at</code> 可能重复。只按时间分页，会让边界不唯一，产生重复或遗漏风险。将唯一且稳定的 <code>id</code> 作为 tie-breaker，索引顺序、<code>ORDER BY</code> 和游标比较必须保持一致。</p>
+      <details class="deep-dive reveal">
+        <summary>展开 30 秒例子：只记时间为什么会漏一条？</summary>
+        <div>
+          <div class="cursor-example">
+            <article class="cursor-page">
+              <b>第一页 · LIMIT 2</b>
+              <span class="cursor-row"><span>ID 107</span><span>10:00:00</span></span>
+              <span class="cursor-row boundary"><span>ID 106</span><span>10:00:00 · 边界</span></span>
+            </article>
+            <div class="cursor-token">游标必须保存<br>(10:00:00, 106)</div>
+            <article class="cursor-page">
+              <b>第二页 · 正确继续</b>
+              <span class="cursor-row"><span>ID 105</span><span>10:00:00</span></span>
+              <span class="cursor-row"><span>ID 220</span><span>09:59:59</span></span>
+            </article>
+          </div>
+          <p class="cursor-example-note">若游标只记 <code>10:00:00</code>，使用 <code>created_at &lt; 10:00:00</code> 会漏掉 ID 105；改用 <code>&lt;=</code> 又可能重复前一页。完整边界应写成 <code>(created_at, id) &lt; ('10:00:00', 106)</code>。</p>
+        </div>
+      </details>
       <div class="rule caution reveal"><strong>不存在“一个完美索引覆盖所有可选条件”。</strong>给高频查询形状有限分型，远胜于为参数组合制造指数级索引。</div>
     </section>
 
@@ -1181,6 +1482,45 @@
         </article>
       </div>
 
+      <figure class="cluster-figure reveal">
+        <header><h3>聚簇索引：主键树的叶子就是数据行</h3><span>INNODB LOOKUP MAP</span></header>
+        <div class="cluster-map">
+          <article class="cluster-index secondary">
+            <h4>二级索引：<code>(status)</code></h4>
+            <p>叶子保存“二级键 + 主键”，不直接保存完整聚簇记录。</p>
+            <div class="mini-tree" role="img" aria-label="状态二级索引的叶子保存状态和订单主键">
+              <span class="mini-root">status root</span><span class="mini-branches"></span>
+              <div class="mini-leaves">
+                <div class="mini-leaf"><b>SECONDARY LEAF</b><span class="mini-record">PAID | PK 1042</span><span class="mini-record">PAID | PK 1088</span></div>
+                <div class="mini-leaf"><b>SECONDARY LEAF</b><span class="mini-record">PENDING | PK 1105</span><span class="mini-record">REFUND | PK 1160</span></div>
+              </div>
+            </div>
+          </article>
+          <div class="cluster-lookup" aria-hidden="true">拿到 PK<br>再查一次</div>
+          <article class="cluster-index primary">
+            <h4>聚簇主键索引：<code>(id)</code></h4>
+            <p>叶子按主键组织，并直接承载该行其余列；“表数据”就在这棵树里。</p>
+            <div class="mini-tree" role="img" aria-label="InnoDB 聚簇主键索引的叶子保存主键和完整数据行">
+              <span class="mini-root">PRIMARY root</span><span class="mini-branches"></span>
+              <div class="mini-leaves">
+                <div class="mini-leaf"><b>CLUSTERED LEAF</b><span class="mini-record full">1042 | PAID | ¥128 | ...整行</span><span class="mini-record full">1088 | PAID | ¥256 | ...整行</span></div>
+                <div class="mini-leaf"><b>CLUSTERED LEAF</b><span class="mini-record full">1105 | PENDING | ¥89 | ...整行</span><span class="mini-record full">1160 | REFUND | ¥320 | ...整行</span></div>
+              </div>
+            </div>
+          </article>
+        </div>
+        <figcaption class="cluster-legend">
+          <p><strong>按主键查询</strong>走聚簇树一次，到叶子就拿到整行。</p>
+          <p><strong>按二级键查询</strong>通常先拿主键，再回聚簇树取整行；覆盖查询可省掉第二跳。</p>
+          <p><strong>为什么主键要窄</strong>主键值同时出现在聚簇叶和所有二级索引叶中。</p>
+        </figcaption>
+      </figure>
+
+      <div class="db-callout pg reveal">
+        <h4>不要把 PostgreSQL 主键叫作 InnoDB 式聚簇索引</h4>
+        <p>PostgreSQL 的主键默认是唯一 B-tree，叶项指向堆表 TID；它不会持续让堆表按主键顺序物理组织。<code>CLUSTER</code> 可以按某个索引一次性重排表，但后续写入不会自动维持该顺序。</p>
+      </div>
+
       <h3 class="reveal">PostgreSQL：<code>INCLUDE</code> 是载荷，不是导航键</h3>
       <div class="code-wrap reveal">
         <pre><code><span class="sql-key">CREATE INDEX</span> idx_orders_feed_cover
@@ -1191,9 +1531,32 @@
 
       <div class="columns-3 reveal">
         <article class="note green"><span class="tag">Requirement 01</span><h3>值在索引里</h3><p>查询所需列必须能由索引类型保存或重建；B-tree 总是支持，GIN 通常不支持 index-only scan。</p></article>
-        <article class="note blue"><span class="tag">Requirement 02</span><h3>页面可见</h3><p>PG 的可见性信息不在普通索引项里。若堆页不是 all-visible，仍需访问堆确认。</p></article>
+        <article class="note blue"><span class="tag">Requirement 02</span><h3>堆页 all-visible</h3><p>PG 的可见性信息不在普通索引项里。若堆页不是 all-visible，仍需访问堆确认。</p></article>
         <article class="note orange"><span class="tag">Requirement 03</span><h3>收益大于宽度</h3><p>读少量返回列、更新相对少的表更可能获益；宽而频繁更新的覆盖索引可能得不偿失。</p></article>
       </div>
+
+      <details class="deep-dive reveal">
+        <summary>展开原理：为什么 Index Only Scan 仍可能访问堆？</summary>
+        <div>
+          <p>PostgreSQL 的 MVCC 允许同一行暂时存在多个 tuple 版本。索引可以提供查询列和堆地址 TID，却没有 tuple 头部的 <code>xmin</code>/<code>xmax</code> 等信息，因此不能单独判断某个版本对当前事务快照是否可见。</p>
+          <div class="visibility-flow">
+            <div class="visibility-node index"><b>① B-tree 索引项</b><span>查询列 + TID<br>例如 P42 / #9</span></div>
+            <div class="visibility-arrow" aria-hidden="true">→</div>
+            <div class="visibility-node map"><b>② Visibility Map</b><span>检查 TID 所在的堆页 P42 是否标记为 <code>all-visible</code></span></div>
+            <div class="visibility-arrow" aria-hidden="true">→</div>
+            <div class="visibility-outcomes">
+              <div class="visibility-outcome yes"><strong>是：</strong>整页所有 tuple 已被保守地确认可见，直接使用索引值，不访问堆。</div>
+              <div class="visibility-outcome no"><strong>否：</strong>不能据此判断，访问 P42/#9 的 tuple 头部，结合当前快照检查可见性。</div>
+            </div>
+          </div>
+          <div class="visibility-lifecycle"><b>INSERT / UPDATE / DELETE</b><span>清除相关堆页的 all-visible 位</span><i>→</i><b>VACUUM</b><span>检查、清理后确认整页安全</span><i>→</i><b>重新标记 all-visible</b></div>
+          <div class="visibility-footnotes">
+            <p><strong>页级保守标记</strong>一条记录刚被修改，就可能让同页其他记录也暂时需要回堆确认。</p>
+            <p><strong>不是缓存状态</strong>堆页即使已在 shared buffers 中，不是 all-visible 仍要访问；只是未必产生物理磁盘 I/O。</p>
+            <p><strong>看 Heap Fetches</strong><code>Heap Fetches: 0</code> 才表示本次没有为可见性回堆；高频写入表通常更难长期保持。</p>
+          </div>
+        </div>
+      </details>
 
       <div class="plan-box reveal">
         <div class="plan-toolbar"><span>INDEX ONLY SCAN · WHAT TO WATCH</span><span>Heap Fetches 才是关键证词</span></div>
@@ -1841,10 +2204,13 @@ SET @tenant_count = 100;
         const matches = Math.max(1, rows * hitPercent / 100);
         const touchedPages = pages * (1 - Math.exp(-matches / pages));
         const depth = Math.max(2, Math.ceil(Math.log(rows) / Math.log(200)));
+        const sequentialPageCost = 1 - cache * 0.35;
+        const randomPageCost = 3.4 - cache * 2.4;
+        const bitmapPageCost = 1.12 - cache * 0.3;
         const costs = {
-          seq: pages * (1 - cache * 0.35),
-          index: depth + touchedPages * (4 - cache * 2.9) + matches * 0.002,
-          bitmap: depth + touchedPages * (1.25 - cache * 0.45) + matches * 0.007
+          seq: pages * sequentialPageCost,
+          index: depth * 2 + touchedPages * randomPageCost + matches * 0.002,
+          bitmap: depth * 2 + 24 + touchedPages * bitmapPageCost + matches * 0.008
         };
         const winner = Object.entries(costs).sort((a, b) => a[1] - b[1])[0][0];
         const best = costs[winner];
@@ -1859,16 +2225,41 @@ SET @tenant_count = 100;
         Object.entries(costs).forEach(([key, value]) => {
           byId(`${key}-cost`).textContent = `${(value / best).toFixed(1)}×`;
           scanResults[key].classList.toggle("active", key === winner);
+          scanResults[key].setAttribute("aria-current", key === winner ? "true" : "false");
         });
 
-        const visibleShare = winner === "seq" ? 1 : clamp(touchedPages / pages, 0, 1);
+        const touchedShare = clamp(touchedPages / pages, 0, 1);
+        const touchedBlocks = Math.max(1, Math.round(touchedShare * scanTrack.children.length));
         [...scanTrack.children].forEach((block, index) => {
           block.className = "";
-          if (index / scanTrack.children.length < visibleShare) block.classList.add(winner === "index" ? "index-read" : "read");
+          if (index < touchedBlocks) block.classList.add("touched");
         });
-        byId("scan-verdict").textContent = `教学模型选择 ${pathNames[winner]}：约命中 ${compact.format(matches)} 行，随机分布时可能触及 ${Math.round(visibleShare * 100)}% 的表页。命中比例只是入口，行分布和缓存会改变答案。`;
+        byId("scan-matches").textContent = `${number.format(Math.round(matches))} 行`;
+        byId("scan-pages").textContent = `${number.format(pages)} 页`;
+        byId("scan-touched-pages").textContent = `${number.format(Math.ceil(touchedPages))} 页`;
+        byId("scan-track-label").textContent = `约 ${Math.round(touchedShare * 100)}%`;
+        scanTrack.setAttribute("aria-label", `随机分布时，命中行可能触及约 ${Math.round(touchedShare * 100)}% 的表页`);
+
+        const reasons = {
+          index: "候选很少，直接沿 B+Tree 找到 TID 并回表，省去了建立位图的启动工作。",
+          bitmap: "候选已经分散到不少堆页，先把 TID 按页归拢，可以减少随机跳转和重复访问。",
+          seq: "候选几乎铺满表页，与其维护地址集合，不如从头到尾连续读取一次。"
+        };
+        byId("scan-verdict").innerHTML = `<strong>教学模型选择 ${pathNames[winner]}</strong>：${reasons[winner]}`;
       };
       [scanRows, scanSelectivity, scanCache].forEach((input) => input.addEventListener("input", updateScanLab));
+      document.querySelectorAll(".scan-preset").forEach((button) => {
+        button.addEventListener("click", () => {
+          scanRows.value = "6";
+          scanCache.value = "60";
+          scanSelectivity.value = button.dataset.selectivity;
+          document.querySelectorAll(".scan-preset").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
+          updateScanLab();
+        });
+      });
+      [scanRows, scanSelectivity, scanCache].forEach((input) => input.addEventListener("input", () => {
+        document.querySelectorAll(".scan-preset").forEach((button) => button.setAttribute("aria-pressed", "false"));
+      }));
       updateScanLab();
 
       const treeRows = byId("tree-rows");
