@@ -1,19 +1,19 @@
--- Database Index Lab - MySQL 8.0.18+ / InnoDB
+-- 数据库索引实验 - MySQL 8.0.18+ / InnoDB
 --
--- EXPLAIN ANALYZE requires MySQL 8.0.18 or newer. On MySQL 8.0.17 and older,
--- comment out the EXPLAIN ANALYZE statements and use the preceding EXPLAIN.
--- MariaDB has different syntax and is not a target of this script.
+-- EXPLAIN ANALYZE 需要 MySQL 8.0.18 或更高版本。如果使用 MySQL 8.0.17
+-- 或更早版本，请注释掉 EXPLAIN ANALYZE 语句，改用其前面的 EXPLAIN。
+-- MariaDB 的语法不同，不在本脚本的适用范围内。
 --
--- This is pure MySQL SQL. Open it in MySQL Workbench, DBeaver, DataGrip, or
--- another SQL console that supports multi-statement scripts, then choose
--- Execute Script / Run All. No mysql client commands are required.
+-- 本文件仅包含标准 MySQL SQL。请在 MySQL Workbench、DBeaver、DataGrip
+-- 或其他支持多语句脚本的 SQL 控制台中打开，然后选择“执行脚本”或“全部运行”。
+-- 无需使用任何 mysql 客户端命令。
 --
--- Edit the two SET values below to change the generated data volume.
--- Supported order_count range: 1 to 1,000,000 (the row generator has 6 digits).
--- tenant_count must be a positive integer. Defaults: 1,000,000 orders and 100 tenants.
--- The account needs CREATE DATABASE and table/index DDL permissions. The script
--- recreates only tables in the dedicated db_index_lab database.
--- Exact plans and timings vary by hardware, cache state, settings, and data.
+-- 修改下面两个 SET 值可调整生成的数据量。
+-- order_count 支持的范围为 1 到 1,000,000（行生成器使用 6 位数字）。
+-- tenant_count 必须是正整数。默认生成 1,000,000 条订单，包含 100 个租户。
+-- 执行账户需要 CREATE DATABASE 以及表和索引的 DDL 权限。本脚本只会在
+-- 专用的 db_index_lab 数据库中重建表。
+-- 实际执行计划和耗时会因硬件、缓存状态、配置及数据而异。
 
 SET @order_count = 1000000;
 SET @tenant_count = 100;
@@ -46,9 +46,9 @@ CREATE TABLE orders (
     PRIMARY KEY (id)
 ) ENGINE = InnoDB;
 
--- Six crossed digit tables generate integers 1 through 1,000,000 without
--- increasing cte_max_recursion_depth. created_at rises with id, keeping
--- the clustered table physically correlated with time for this lab.
+-- 通过 6 个数字表的笛卡尔积生成 1 到 1,000,000 的整数，无需提高
+-- cte_max_recursion_depth。created_at 随 id 递增，使本实验中的聚簇表
+-- 在物理存储上与时间保持相关。
 INSERT INTO orders (
     id,
     tenant_id,
@@ -139,11 +139,10 @@ SELECT
 FROM orders;
 
 -- ---------------------------------------------------------------------------
--- Case 1: the PRIMARY KEY is the InnoDB clustered index
+-- 场景 1：PRIMARY KEY 是 InnoDB 的聚簇索引
 -- ---------------------------------------------------------------------------
--- The whole row lives with the primary-key leaf record. A primary-key range is
--- therefore a clustered range scan, not a secondary-index lookup plus a second
--- lookup into a separate heap.
+-- 完整的数据行存储在主键叶子记录中。因此，主键范围查询执行的是聚簇索引
+-- 范围扫描，而不是先查二级索引，再到独立的堆表中进行第二次查找。
 
 EXPLAIN
 SELECT *
@@ -156,10 +155,10 @@ FROM orders
 WHERE id BETWEEN FLOOR(@order_count / 2) AND FLOOR(@order_count / 2) + 50;
 
 -- ---------------------------------------------------------------------------
--- Case 2: a secondary index stores its key plus the primary key
+-- 场景 2：二级索引同时存储自身的键和主键
 -- ---------------------------------------------------------------------------
--- Fetching columns absent from idx_orders_tenant_id requires InnoDB to use the
--- primary key stored in each matching secondary leaf entry to fetch base rows.
+-- 查询 idx_orders_tenant_id 中未包含的列时，InnoDB 需要使用每条匹配的
+-- 二级索引叶子记录中存储的主键，再回到聚簇索引中获取完整数据行。
 
 CREATE INDEX idx_orders_tenant_id ON orders (tenant_id);
 ANALYZE TABLE orders;
@@ -187,10 +186,10 @@ LIMIT 50;
 DROP INDEX idx_orders_tenant_id ON orders;
 
 -- ---------------------------------------------------------------------------
--- Case 3: a compound secondary index aligns filtering and ordering
+-- 场景 3：复合二级索引同时匹配筛选和排序需求
 -- ---------------------------------------------------------------------------
--- InnoDB silently carries the primary key in every secondary entry. id is
--- explicit here because its descending order is part of the endpoint contract.
+-- InnoDB 会在每条二级索引记录中隐式携带主键。这里显式加入 id，是因为
+-- 接口约定要求它按降序排列。
 
 CREATE INDEX idx_orders_list
     ON orders (tenant_id, status, created_at DESC, id DESC);
@@ -217,10 +216,10 @@ ORDER BY created_at DESC, id DESC
 LIMIT 50;
 
 -- ---------------------------------------------------------------------------
--- Case 4: MySQL has no PostgreSQL-style INCLUDE clause
+-- 场景 4：MySQL 没有 PostgreSQL 风格的 INCLUDE 子句
 -- ---------------------------------------------------------------------------
--- To make this query covering, projected columns become trailing key columns.
--- This can avoid clustered lookups, but it also makes every leaf entry larger.
+-- 为了让索引覆盖此查询，需要将查询返回的列作为索引末尾的键列。
+-- 这样可以避免回查聚簇索引，但也会增大每条叶子记录。
 
 DROP INDEX idx_orders_list ON orders;
 CREATE INDEX idx_orders_list_covering
@@ -266,6 +265,6 @@ WHERE table_schema = 'db_index_lab'
 
 SELECT 'Lab complete; objects kept in database db_index_lab.' AS message;
 
--- Explicit cleanup (disabled by default). Remove the comment only when the
--- dedicated lab database and all of its contents are no longer needed:
+-- 显式清理（默认禁用）。仅当确定不再需要专用实验数据库及其中的全部内容时，
+-- 才取消下一行的注释：
 -- DROP DATABASE db_index_lab;
